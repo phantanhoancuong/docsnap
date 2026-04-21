@@ -1,65 +1,168 @@
-import Image from "next/image";
+"use client";
 
+import Link from "next/link";
+
+import { ImageGallery } from "@/app/components/client";
+import { Icon } from "@/app/components/server";
+
+import { useState } from "react";
+
+import { useScanner } from "@/app/hooks";
+
+import { AlbumIcon, DownloadIcon, ScanIcon } from "@/app/assets/icons";
+
+import { ScanMode } from "@/app/types";
+
+import {
+  ExportErrorOverlay,
+  FailedImagesOverlay,
+} from "@/app/components/client";
+
+const SCAN_MODES: ScanMode[] = ["bw", "color"];
+const SCAN_MODE_LABELS: Record<ScanMode, string> = {
+  bw: "B&W",
+  color: "Color",
+};
+
+/**
+ * Home page component.
+ *
+ * Responsibilities:
+ *    - Handle image uploads.
+ *    - Allow user to switch scan modes.
+ *    - Explicitly trigger scanning with the scan button.
+ *    - Trigger processing and download with the download button.
+ *    - Display uploaded images in a sortable gallery.
+ *    - Show a dismissible banner when PDF export fails.
+ * @returns
+ */
 export default function Home() {
+  const scanner = useScanner();
+  const [showFailedOverlay, setShowFailedOverlay] = useState(false);
+
+  const handleDownload = () => {
+    if (scanner.failedCount > 0) {
+      setShowFailedOverlay(true);
+      return;
+    }
+    scanner.exportPDF();
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div className="flex flex-col min-h-screen">
+      <header className="flex items-center h-20 pl-10">
+        <Link href="/" className="flex items-center gap-3 cursor-pointer">
+          <h1 className="text-2xl font-bold tracking-tight">docsnap</h1>
+        </Link>
+      </header>
+
+      <main className="flex flex-col flex-1 gap-6 p-10 overflow-hidden">
+        <div className="flex flex-col gap-10">
+          <div
+            className="grid gap-2"
+            style={{
+              gridTemplateRows: scanner.hasImages
+                ? "auto auto auto auto"
+                : "auto",
+            }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            <label className="flex items-center justify-center gap-2 p-4 border-2 rounded-sm cursor-pointer whitespace-nowrap">
+              <Icon src={AlbumIcon} />
+              <span>Upload Photos</span>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={scanner.insertImages}
+              />
+            </label>
+
+            {scanner.hasImages && (
+              <>
+                {/* Mode switcher */}
+                <div className="flex gap-2">
+                  {SCAN_MODES.map((mode) => {
+                    const isActive = scanner.scanMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        onClick={scanner.toggleScanMode}
+                        disabled={isActive}
+                        className={[
+                          "flex items-center justify-center p-4 border-2 rounded-sm transition-all duration-300",
+                          isActive
+                            ? "flex-[2] cursor-default"
+                            : "flex-[1] cursor-pointer",
+                        ].join(" ")}
+                      >
+                        <span>{SCAN_MODE_LABELS[mode]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Scan button */}
+                <button
+                  onClick={scanner.scanImages}
+                  disabled={scanner.isProcessing}
+                  className={[
+                    "flex w-full items-center justify-center gap-2 p-4 border-2 rounded-sm transition-all",
+                    scanner.isProcessing
+                      ? "cursor-not-allowed opacity-30"
+                      : "cursor-pointer opacity-100",
+                  ].join(" ")}
+                >
+                  <Icon src={ScanIcon} />
+                  <span>Scan</span>
+                </button>
+
+                {/* Download button -- red when there are failed images */}
+                <button
+                  onClick={handleDownload}
+                  disabled={scanner.isProcessing}
+                  className={[
+                    "flex w-full items-center justify-center gap-2 p-4 border-2 rounded-sm transition-all",
+                    scanner.isProcessing
+                      ? "cursor-not-allowed opacity-30"
+                      : scanner.failedCount > 0
+                        ? "cursor-pointer border-red-500 text-red-500"
+                        : "cursor-pointer opacity-100",
+                  ].join(" ")}
+                >
+                  <Icon src={DownloadIcon} />
+                  <span>Download</span>
+                </button>
+              </>
+            )}
+          </div>
+
+          <ImageGallery
+            imageKeys={scanner.imageKeys}
+            images={scanner.images}
+            onRetry={scanner.retryImage}
+            onRemove={scanner.removeImage}
+            onReorder={scanner.reorderImages}
+            isProcessing={scanner.isProcessing}
+          />
         </div>
       </main>
+
+      {/* Failed images overlay */}
+      {showFailedOverlay && (
+        <FailedImagesOverlay
+          failedCount={scanner.failedCount}
+          onClose={() => setShowFailedOverlay(false)}
+        />
+      )}
+
+      {/* Export error overlay */}
+      {scanner.exportError && (
+        <ExportErrorOverlay
+          errorMessage={scanner.exportError}
+          onClose={scanner.clearExportError}
+        />
+      )}
     </div>
   );
 }
