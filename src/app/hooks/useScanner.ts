@@ -353,7 +353,6 @@ export const useScanner = () => {
     } catch (e) {
       setExportError(e instanceof Error ? e.message : "Failed to export PDF");
     }
-    setExportError("Failed to export PDF");
   };
 
   /**
