@@ -67,6 +67,7 @@ const ImageCard = React.memo(
       transition,
       opacity: isDragging ? 0.4 : 1,
       zIndex: isDragging ? 10 : undefined,
+      touchAction: "none",
     };
 
     const { processPhase } = entry;
