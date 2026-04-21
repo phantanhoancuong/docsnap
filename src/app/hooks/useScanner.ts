@@ -316,33 +316,43 @@ export const useScanner = () => {
    * @returns A promise that resolves when the PDF has been saved.
    */
   const exportPDF = async (fileName: string = "scan.pdf"): Promise<void> => {
-    const staleEntries = getStaleEntries(scanMode);
-    const promises = staleEntries.map((entry) =>
-      enqueue({ ...entry, scanMode }).catch(() => {}),
+    const allEntries = imageKeysRef.current.map(
+      (key) => imagesRef.current.get(key)!,
     );
 
-    await Promise.all(promises);
+    const results = await Promise.all(
+      allEntries.map(async (entry) => {
+        const stale =
+          entry.processPhase === "notProcessed" ||
+          entry.processPhase === "failed" ||
+          (entry.processPhase === "processed" && entry.scanMode !== scanMode);
 
-    const imageEntries = imageKeysRef.current
-      .map((key) => imagesRef.current.get(key)!)
-      .filter((entry) => entry?.processedImage);
+        if (stale) {
+          const processedImage = await enqueue({ ...entry, scanMode }).catch(
+            () => null,
+          );
+          return processedImage;
+        }
 
-    if (imageEntries.length === 0) return;
+        return entry.processedImage ?? null;
+      }),
+    );
+
+    const validResults = results.filter(
+      (result): result is ImageFile => result !== null,
+    );
+
+    if (validResults.length === 0) return;
 
     const pdf = new jsPDF("p", "mm", "a4");
     const pageWidth = pdf.internal.pageSize.getWidth();
 
     try {
       const loadedImages = await Promise.all(
-        imageEntries.map((entry) =>
-          loadImage(entry.processedImage!.url).then((image) => ({
-            image,
-            entry,
-          })),
-        ),
+        validResults.map((processedImage) => loadImage(processedImage.url)),
       );
 
-      loadedImages.forEach(({ image }, index) => {
+      loadedImages.forEach((image, index) => {
         const imageWidth = pageWidth;
         const imageHeight = (image.height / image.width) * pageWidth;
         if (index > 0) pdf.addPage();
