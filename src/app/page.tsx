@@ -92,8 +92,8 @@ export default function Home() {
                         className={[
                           "flex items-center justify-center p-4 border-2 rounded-sm transition-all duration-300",
                           isActive
-                            ? "flex-[2] cursor-default"
-                            : "flex-[1] cursor-pointer",
+                            ? "flex-2 cursor-default"
+                            : "flex-1 cursor-pointer",
                         ].join(" ")}
                       >
                         <span>{SCAN_MODE_LABELS[mode]}</span>
