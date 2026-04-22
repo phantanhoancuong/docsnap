@@ -74,7 +74,10 @@ export default function Home() {
                 accept="image/*"
                 multiple
                 className="hidden"
-                onChange={scanner.insertImages}
+                onChange={(e) => {
+                  scanner.insertImages(e);
+                  e.target.value = "";
+                }}
               />
             </label>
 
