@@ -28,7 +28,9 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "**/*.mts",
+    "sw.template.js",
+    "scripts/generate-sw.mjs"
   ],
   "exclude": ["node_modules"]
 }
