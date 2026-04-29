@@ -46,7 +46,7 @@ const CameraView = ({ onCapture }: { onCapture: (files: File[]) => void }) => {
       {/* Video feed with shutter flash overlay */}
       <div className="relative flex flex-1 w-full">
         <video
-          className="flex-1 w-full object-contain"
+          className="flex-1 w-full object-contain max-h-[80dvh]"
           ref={videoRef}
           muted
           playsInline
