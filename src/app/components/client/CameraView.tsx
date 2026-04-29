@@ -44,9 +44,9 @@ const CameraView = ({ onCapture }: { onCapture: (files: File[]) => void }) => {
   return (
     <div className="flex flex-col fixed inset-x-0 top-20 bottom-0 z-20 bg-background">
       {/* Video feed with shutter flash overlay */}
-      <div className="relative flex flex-1 w-full">
+      <div className="relative flex flex-1 min-h-0 items-center w-full">
         <video
-          className="flex-1 w-full object-contain max-h-[80dvh]"
+          className="w-full h-full object-contain"
           ref={videoRef}
           muted
           playsInline
@@ -56,7 +56,7 @@ const CameraView = ({ onCapture }: { onCapture: (files: File[]) => void }) => {
       </div>
 
       {/* Photo capture button */}
-      <div className="flex justify-center py-4">
+      <div className="flex justify-center shrink-0 py-4">
         <button
           disabled={isCapturing}
           className="w-20 h-20 rounded-full border-4 border-foreground bg-background active:bg-foreground/20 transition-colors disabled:opacity-50"
