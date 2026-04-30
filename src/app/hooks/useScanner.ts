@@ -149,18 +149,15 @@ export const useScanner = () => {
       );
 
   /**
-   * Insert images from a file input event.
+   * Insert images from a file list.
    *
    * Behavior:
    *    - Create a blob URL for each image and add them to the image list with `processPhase` set to `notProcessed`.
    *    - Kick off ONNX session initialization eagerly if it's the first call.
    *
-   * @param e - The file input change event.
+   * @param files - The file list of images to be inserted.
    */
-  const insertImages = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    const files = e.target.files;
-    if (!files) return;
-
+  const insertImages = (files: File[]): void => {
     getSession().catch(() => {});
 
     const newImageKeys: string[] = [];
@@ -199,24 +196,6 @@ export const useScanner = () => {
     getStaleEntries(scanMode).forEach((entry) =>
       enqueue({ ...entry, scanMode }),
     );
-  };
-
-  /**
-   * Toggle scan mode between "bw" and "color".
-   *
-   * Behavior:
-   *    - If processing is active, re-enqueue all images under the new mode.
-   *    - If idle, just update the mode.
-   */
-  const toggleScanMode = (): void => {
-    const newScanMode = scanMode === "bw" ? "color" : "bw";
-    setScanMode(newScanMode);
-    if (isProcessingRef.current) {
-      imageKeysRef.current.forEach((key) => {
-        const entry = imagesRef.current.get(key);
-        if (entry) enqueue({ ...entry, scanMode: newScanMode });
-      });
-    }
   };
 
   /**
@@ -385,7 +364,7 @@ export const useScanner = () => {
     clearExportError,
     insertImages,
     scanImages,
-    toggleScanMode,
+    setScanMode,
     retryImage,
     removeImage,
     reorderImages,
