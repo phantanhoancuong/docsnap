@@ -14,7 +14,6 @@ import { useEffect, useRef } from "react";
  * @returns takePhoto - Function to capture a photo from the current frame.
  */
 export const useCamera = () => {
-  const mediaRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   /**
@@ -47,6 +46,11 @@ export const useCamera = () => {
     };
 
     start();
+
+    return () => {
+      const stream = videoRef.current?.srcObject as MediaStream | null;
+      stream?.getTracks().forEach((track) => track.stop());
+    };
   }, []);
 
   /**
