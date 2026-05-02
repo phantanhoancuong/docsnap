@@ -16,8 +16,14 @@ import { useCamera } from "@/app/hooks/useCamera";
  *    - Handle photo capture with a shutter flash effect.
  *    - Prevent double captures while a capture is in progress.
  */
-const CameraView = ({ onCapture }: { onCapture: (files: File[]) => void }) => {
-  const { videoRef, capturePhoto } = useCamera();
+const CameraView = ({
+  onCapture,
+  isTorchOn,
+}: {
+  onCapture: (files: File[]) => void;
+  isTorchOn: boolean;
+}) => {
+  const { videoRef, capturePhoto } = useCamera({ isTorchOn });
 
   // Lock page scroll while the overlay is open.
   // Even though the content doesn't change, scrolling can hide or unhide the browser banner or stretch the viewport on mobile.

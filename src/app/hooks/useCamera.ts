@@ -13,8 +13,22 @@ import { useEffect, useRef } from "react";
  * @returns videoRef - Ref to attach to the video element.
  * @returns takePhoto - Function to capture a photo from the current frame.
  */
-export const useCamera = () => {
+export const useCamera = ({ isTorchOn }: { isTorchOn: boolean }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const trackRef = useRef<MediaStreamTrack | null>(null);
+  const isTorchOnRef = useRef(isTorchOn);
+
+  const applyTorch = (value: boolean) => {
+    const track = trackRef.current;
+    if (!track) return;
+    if (!(track.getCapabilities() as any).torch) return;
+    track.applyConstraints({ advanced: [{ torch: value } as any] });
+  };
+
+  useEffect(() => {
+    isTorchOnRef.current = isTorchOn;
+    applyTorch(isTorchOn);
+  }, [isTorchOn]);
 
   /**
    * Request the camera stream and attach it to the video element.
@@ -25,7 +39,7 @@ export const useCamera = () => {
       try {
         if (!videoRef.current) return;
 
-        videoRef.current.srcObject = await navigator.mediaDevices.getUserMedia({
+        const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
             facingMode: "environment",
@@ -34,12 +48,17 @@ export const useCamera = () => {
           },
         });
 
+        trackRef.current = stream.getVideoTracks()[0];
+        videoRef.current.srcObject = stream;
+
         // Block until the browser has negotiated the stream resolution.
         await new Promise<void>((resolve) => {
           videoRef.current!.onloadedmetadata = () => resolve();
         });
 
         await videoRef.current.play();
+
+        applyTorch(isTorchOnRef.current);
       } catch (err) {
         console.error("Camera access failed:", err);
       }
