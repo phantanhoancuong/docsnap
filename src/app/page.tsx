@@ -14,6 +14,8 @@ import {
   CameraIcon,
   CloseIcon,
   DownloadIcon,
+  FlashOffIcon,
+  FlashOnIcon,
   ScanIcon,
 } from "@/app/assets/icons";
 
@@ -48,6 +50,7 @@ export default function Home() {
   const scanner = useScanner();
   const [showFailedOverlay, setShowFailedOverlay] = useState<boolean>(false);
   const [showCamera, setShowCamera] = useState<boolean>(false);
+  const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
 
   // Show the failed images overlay instead of exporting if any images failed.
   const handleDownload = () => {
@@ -58,6 +61,11 @@ export default function Home() {
     scanner.exportPDF();
   };
 
+  const handleCloseCamera = () => {
+    setShowCamera(false);
+    setIsTorchOn(false);
+  };
+
   return (
     <div className="flex flex-col min-h-screen">
       {/* Header -- shows close button when camera is open */}
@@ -66,12 +74,23 @@ export default function Home() {
           <h1 className="text-3xl font-bold tracking-tight">docsnap</h1>
         </Link>
         {showCamera && (
-          <button
-            className="cursor-pointer"
-            onClick={() => setShowCamera(false)}
-          >
-            <Icon src={CloseIcon} className="size-10" />
-          </button>
+          <div>
+            <button
+              className="cursor-pointer"
+              onClick={() => setIsTorchOn((torch) => !torch)}
+            >
+              <Icon
+                src={isTorchOn ? FlashOnIcon : FlashOffIcon}
+                className="size-10"
+              />
+            </button>
+            <button
+              className="cursor-pointer"
+              onClick={() => handleCloseCamera()}
+            >
+              <Icon src={CloseIcon} className="size-10" />
+            </button>
+          </div>
         )}
       </header>
 
@@ -201,7 +220,9 @@ export default function Home() {
       )}
 
       {/* Camera overlay (renders below the header, close is handled in header) */}
-      {showCamera && <CameraView onCapture={scanner.insertImages} />}
+      {showCamera && (
+        <CameraView onCapture={scanner.insertImages} isTorchOn={isTorchOn} />
+      )}
     </div>
   );
 }
