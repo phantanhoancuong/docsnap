@@ -223,6 +223,9 @@ export default function Home() {
       {showCamera && (
         <CameraView onCapture={scanner.insertImages} isTorchOn={isTorchOn} />
       )}
+      <footer className="text-xs text-gray-400 text-center pb-4">
+        app version: {process.env.NEXT_PUBLIC_VERSION}
+      </footer>
     </div>
   );
 }
