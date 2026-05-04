@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ServiceWorkerRegistration } from "@/app/components/client";
 import "./globals.css";
+import { LoadingContextProvider } from "./contexts/LoadingContext";
+import LoadingOverlay from "./components/client/LoadingOverlay";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -34,8 +36,11 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        {children}
-        <ServiceWorkerRegistration />
+        <LoadingContextProvider>
+          <LoadingOverlay />
+          {children}
+          <ServiceWorkerRegistration />
+        </LoadingContextProvider>
       </body>
     </html>
   );
