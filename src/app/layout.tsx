@@ -1,9 +1,15 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { ServiceWorkerRegistration } from "@/app/components/client";
+
+import {
+  LoadingOverlay,
+  ModelLoader,
+  ServiceWorkerRegistration,
+} from "@/app/components/client";
+
+import { LoadingContextProvider } from "@/app/contexts/LoadingContext";
+
 import "./globals.css";
-import { LoadingContextProvider } from "./contexts/LoadingContext";
-import LoadingOverlay from "./components/client/LoadingOverlay";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -38,8 +44,9 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <LoadingContextProvider>
           <LoadingOverlay />
-          {children}
           <ServiceWorkerRegistration />
+          <ModelLoader />
+          {children}
         </LoadingContextProvider>
       </body>
     </html>

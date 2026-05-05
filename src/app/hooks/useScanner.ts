@@ -9,7 +9,6 @@ import { v4 as uuidv4 } from "uuid";
 import { ImageEntry, ImageFile, ScanMode } from "@/app/types/image";
 
 import { processImage } from "@/app/lib/pipeline";
-import { getSession } from "@/app/lib/onnx";
 
 import { useLatest, useProcessingQueue } from "@/app/hooks";
 
@@ -126,7 +125,6 @@ export const useScanner = () => {
 
   const imagesRef = useLatest(images);
   const imageKeysRef = useLatest(imageKeys);
-  const isProcessingRef = useLatest(isProcessing);
 
   /**
    * Return entries that need processing in the current display order.
@@ -153,13 +151,10 @@ export const useScanner = () => {
    *
    * Behavior:
    *    - Create a blob URL for each image and add them to the image list with `processPhase` set to `notProcessed`.
-   *    - Kick off ONNX session initialization eagerly if it's the first call.
    *
    * @param files - The file list of images to be inserted.
    */
   const insertImages = (files: File[]): void => {
-    getSession().catch(() => {});
-
     const newImageKeys: string[] = [];
     const newImageEntries: [string, ImageEntry][] = Array.from(files).map(
       (file) => {

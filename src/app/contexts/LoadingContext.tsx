@@ -7,15 +7,19 @@ import { createContext, useState } from "react";
  *
  * @property isSwReady - `true` once the service worker is registered.
  * @property isModelReady - `true` once the ONNX model is warmed up.
- * @property setSwReady - Function to mark the service worker as ready.
- * @property setModelReady - Function to mark the model as ready.
- *
+ * @property isModelError - `true` if the ONNX model failed to load.
+ * @property setSwReady - Mark the service worker as ready.
+ * @property setModelReady - Mark the model as ready.
+ * @property setModelError - Mark the model as failed.
  */
 type LoadingContextValue = {
   isSwReady: boolean;
   isModelReady: boolean;
+  isModelError: boolean;
+
   setSwReady: () => void;
   setModelReady: () => void;
+  setModelError: () => void;
 };
 
 export const LoadingContext = createContext<LoadingContextValue | null>(null);
@@ -23,10 +27,7 @@ export const LoadingContext = createContext<LoadingContextValue | null>(null);
 /**
  * Provide loading state, tracking whether the service worker and ONNX model are ready.
  *
- * `LoadingOverlay` component consumes this context to block the UI until both are ready.
- *
- * @param param0
- * @returns
+ * `LoadingOverlay` consumes this context to block the UI until both are ready, or to show an error if the model fails to load.
  */
 export const LoadingContextProvider = ({
   children,
@@ -35,14 +36,18 @@ export const LoadingContextProvider = ({
 }) => {
   const [isSwReady, setIsSwReady] = useState<boolean>(false);
   const [isModelReady, setIsModelReady] = useState<boolean>(false);
+  const [isModelError, setIsModelError] = useState<boolean>(false);
 
   return (
     <LoadingContext.Provider
       value={{
         isSwReady,
         isModelReady,
+        isModelError,
+
         setSwReady: () => setIsSwReady(true),
         setModelReady: () => setIsModelReady(true),
+        setModelError: () => setIsModelError(true),
       }}
     >
       {children}
