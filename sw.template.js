@@ -3,9 +3,13 @@ const MODEL_CACHE = "docsnap-model-__MODEL_VERSION__";
 const MODEL_URL = "/seg-model/seg_model.onnx";
 
 // Pre-cache the model on install so it is ready before the first scan.
+// Skip if already cached to avoid re-downloading on app-only updates.
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(MODEL_CACHE).then((cache) => cache.add(MODEL_URL)),
+    caches.open(MODEL_CACHE).then(async (cache) => {
+      const cached = await cache.match(MODEL_URL);
+      if (!cached) await cache.add(MODEL_URL);
+    }),
   );
   self.skipWaiting();
 });
@@ -29,6 +33,9 @@ self.addEventListener("activate", (event) => {
 // Because the model and app shell is versioned automatically, always serve from cache.
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
+
+  // Never cache the service worker itself so updates are always detected.
+  if (url.pathname === "/sw.js") return;
 
   if (url.pathname === MODEL_URL) {
     event.respondWith(
