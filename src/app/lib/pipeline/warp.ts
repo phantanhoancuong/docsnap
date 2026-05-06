@@ -1,11 +1,53 @@
+import {
+  createProgram,
+  createQuadBuffer,
+  uploadTexture,
+} from "@/app/lib/pipeline/webgl";
+
 import { Point } from "@/app/types";
 
+const VERT_SRC = `
+  attribute vec2 a_pos;
+  void main() {
+    gl_Position = vec4(a_pos, 0.0, 1.0);
+  }
+`;
+
 /**
- * Solve 3x3 homography matrix mapping src quad to dst quad
+ * gl_FragCoord is pixel-center based (first pixel =0.5) and `y=0` is BOTTOM in WebGL.
+ *
+ * Subtract 0.5 on both axes to get integer pixel indices matching the CPU path.
+ *
+ * Flip Y with `(outH - y)` to convert to top-origin. Combined: `dy = outH - y - 0.5`
+ *
+ * UV: gl.texImage2D uploads `y=0` at top, so use `sy/srcH` directly, don't use `(1.0 - sy/srcH)`.
+ */
+const FRAG_SRC = `
+  precision highp float;
+  uniform sampler2D u_src;
+  uniform vec2 u_outSize;
+  uniform vec2 u_srcSize;
+  uniform mat3 u_H;
+  void main() {
+    float dx = gl_FragCoord.x - 0.5;
+    float dy = u_outSize.y - gl_FragCoord.y - 0.5;
+    vec3 p = u_H * vec3(dx, dy, 1.0);
+    float sx = p.x / p.z;
+    float sy = p.y / p.z;
+    if (sx < 0.0 || sy < 0.0 || sx >= u_srcSize.x || sy >= u_srcSize.y) {
+      gl_FragColor = vec4(1.0);
+      return;
+    }
+    vec2 uv = vec2(sx / u_srcSize.x, sy / u_srcSize.y);
+    gl_FragColor = texture2D(u_src, uv);
+  }
+`;
+/**
+ * Solve a 3x3 homography matrix mapping src quad to dst quad using Gaussian elimination.
  *
  * @param srcCorners - Four source points [TL, TR, BR, BL].
  * @param dstCorners - Four destination points [TL, TR, BR, BL].
- * @returns 9-element Float64Array [h0 thorugh h8] where h8 is always 1.
+ * @returns 9-element Float64Array [h0 through h8] where h8 is always 1.
  */
 const solveHomography = (
   srcCorners: [Point, Point, Point, Point],
@@ -54,15 +96,14 @@ const solveHomography = (
 };
 
 /**
- * Compute the output canvas dimension for a perspective-corrected document.
+ * Compute the output canvas dimensions for a perspective-corrected document.
  *
- * Output size equals the quad's natural pixel dimensions (average of opposite edge lengths),
- * capped at the source image size to prevent upscaling.
+ * Output size equals the quad's natural pixel dimensions (average of opposite edge lengths), capped at the source image dimensions to prevent upscaling.
  *
- * @param quad - Four corner points of the document in the source image space [TL, TR, BR, BL].
+ * @param quad - Four corner points of the document in source image space [TL, TR, BR, BL].
  * @param sourceWidth - Source image width in pixels.
  * @param sourceHeight - Source image height in pixels.
- * @returns outputWidth and outputHeight of the warped canvas.
+ * @returns Object with `width` and `height` of the warped output canvas in pixels.
  */
 const computeOutputSize = (
   quad: [Point, Point, Point, Point],
@@ -101,19 +142,17 @@ const computeOutputSize = (
 };
 
 /**
- * Apply a perspective warp to straighten a quadrilaterl document region
- * into a rectangular canvas using inverse homography and bilinear interpolation.
+ * Straighten a quadrilateral document region into a flat rectangular canvas by remapping each output pixel back to its position in the source image.
  *
- * For each destination pixel, the inverse homography maps back to fractional source coordinates,
- * which are then sampled with bilinear interpolation.
+ * Pixels that fall outside the source bounds are filled white.
  *
- * Pixels that map outside the source bounds are left as white.
+ * Used as the fallback when WebGL is unavailable or the source image exceeds the device's maximum texture size.
  *
  * @param image - Source image element to warp.
- * @param quad - Four corner points of the document region [TL, TR, BR, BL].
- * @returns Canvas containing the perspective-corrected document at natural resolution.
+ * @param quad - Four corner points of the document region in source image space [TL, TR, BR, BL].
+ * @returns HTMLCanvasElement containing the perspective-corrected document at natural resolution.
  */
-export const warpPerspective = (
+export const warpPerspectiveCPU = (
   image: HTMLImageElement,
   quad: [Point, Point, Point, Point],
 ): HTMLCanvasElement => {
@@ -222,4 +261,94 @@ export const warpPerspective = (
 
   outputCtx.putImageData(outputImage, 0, 0);
   return outputCanvas;
+};
+
+/**
+ * Straighten a quadrilateral document region into a flat rectangular canvas by remapping each output pixel back to its position in the source image.
+ * Pixels that fall outside the source bounds are filled white.
+ *
+ * Fall back to `warpPerspectiveCPU()` if:
+ * - WebGL is unavailable on the device.
+ * - The source image exceeds the device's maximum texture size.
+ * - The GPU program fails to initialize.
+ *
+ * @param image - Source image element to warp.
+ * @param quad - Four corner points of the document region in source image space [TL, TR, BR, BL].
+ * @returns HTMLCanvasElement containing the perspective-corrected document at natural resolution.
+ */
+export const warpPerspective = (
+  image: HTMLImageElement,
+  quad: [Point, Point, Point, Point],
+): HTMLCanvasElement => {
+  const { width: outW, height: outH } = computeOutputSize(
+    quad,
+    image.width,
+    image.height,
+  );
+  const srcW = image.width;
+  const srcH = image.height;
+
+  const H = solveHomography(
+    [
+      { x: 0, y: 0 },
+      { x: outW, y: 0 },
+      { x: outW, y: outH },
+      { x: 0, y: outH },
+    ],
+    quad,
+  );
+
+  const canvas = document.createElement("canvas");
+  canvas.width = outW;
+  canvas.height = outH;
+
+  const gl = canvas.getContext("webgl");
+  if (!gl) return warpPerspectiveCPU(image, quad);
+
+  const maxTexSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
+  if (srcW > maxTexSize || srcH > maxTexSize)
+    return warpPerspectiveCPU(image, quad);
+
+  const prog = createProgram(gl, VERT_SRC, FRAG_SRC);
+  if (!prog) return warpPerspectiveCPU(image, quad);
+
+  gl.useProgram(prog);
+
+  const vbo = createQuadBuffer(gl);
+  const posLoc = gl.getAttribLocation(prog, "a_pos");
+  gl.enableVertexAttribArray(posLoc);
+  gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+  const tex = uploadTexture(gl, image);
+
+  /**
+   * H is row-major; GSLS mat3 is column-major, so transpose manually.
+   *
+   * `transpose=true` in `uniformMatrix3fv()` is WebGL2 only and it silently produces white in WebGL1.
+   */
+  const Hcm = new Float32Array([
+    H[0],
+    H[3],
+    H[6],
+    H[1],
+    H[4],
+    H[7],
+    H[2],
+    H[5],
+    H[8],
+  ]);
+  gl.uniform1i(gl.getUniformLocation(prog, "u_src"), 0);
+  gl.uniform2f(gl.getUniformLocation(prog, "u_outSize"), outW, outH);
+  gl.uniform2f(gl.getUniformLocation(prog, "u_srcSize"), srcW, srcH);
+  gl.uniformMatrix3fv(gl.getUniformLocation(prog, "u_H"), false, Hcm);
+
+  gl.viewport(0, 0, outW, outH);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.finish();
+
+  gl.deleteTexture(tex);
+  gl.deleteBuffer(vbo);
+  gl.deleteProgram(prog);
+
+  return canvas;
 };

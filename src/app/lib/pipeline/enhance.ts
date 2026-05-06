@@ -237,6 +237,14 @@ const floodFillEdgesWhite = (
  * - Per-channel histogram stretching.
  * - Unsharp masking.
  *
+
+ */
+/**
+ * Enhance color images through per-channel histogram stretching.
+ *
+ * Clip the darkest `HISTOGRAM_LOW_PERCENTILE` and brightest `HISTOGRAM_HIGH_PERCENTILE` of pixels per channel,
+ * then stretch the remaining range to [0, 255].
+ *
  * @param canvasContext - Canvas 2D context containing the image.
  * @param imageWidth - Width of the image.
  * @param imageHeight - Height of the image.
@@ -304,11 +312,10 @@ function enhanceColor(
 
 /**
  * Enhance black-and-white images through:
- * - Pre-blur to reduce noise.
- * - Grayscale conversion.
- * - Adaptive thresholding (local binarization).
- * - Unsharp masking.
- * - Edge flood-fill cleanup.
+ *    - Pre-blur to reduce noise before thresholding.
+ *    - Grayscale conversion using luminance weights.
+ *    - Adaptive thresholding (local binarization).
+ *    - Edge flood-fill to remove border-connected background artifacts.
  *
  * @param canvasContext - Canvas 2D context containing the image.
  * @param imageWidth - Width of the image.
@@ -389,7 +396,7 @@ const enhanceBW = (
 /**
  * Image enhancement pipeline.
  *
- * Upscale input, apply either BW or color enhancement, then downsample back to original size.
+ * Upscale the input by `UPSCALE_FACTOR`, apply either BW or color enhancement, then downsample back to the original size.
  *
  * @param canvas - Source canvas element.
  * @param mode - Scan mode ("bw" or "color" mode).
