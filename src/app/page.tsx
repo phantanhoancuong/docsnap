@@ -12,10 +12,7 @@ import { useScanner } from "@/app/hooks";
 import {
   AlbumIcon,
   CameraIcon,
-  CloseIcon,
   DownloadIcon,
-  FlashOffIcon,
-  FlashOnIcon,
   ScanIcon,
 } from "@/app/assets/icons";
 
@@ -50,7 +47,6 @@ export default function Home() {
   const scanner = useScanner();
   const [showFailedOverlay, setShowFailedOverlay] = useState<boolean>(false);
   const [showCamera, setShowCamera] = useState<boolean>(false);
-  const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
 
   // Show the failed images overlay instead of exporting if any images failed.
   const handleDownload = () => {
@@ -61,37 +57,13 @@ export default function Home() {
     scanner.exportPDF();
   };
 
-  const handleCloseCamera = () => {
-    setShowCamera(false);
-    setIsTorchOn(false);
-  };
-
   return (
     <div className="flex flex-col min-h-screen">
-      {/* Header -- shows close button when camera is open */}
+      {/* Header */}
       <header className="flex items-center justify-between h-20 px-6">
         <Link href="/" className="flex items-center gap-3 cursor-pointer">
           <h1 className="text-3xl font-bold tracking-tight">docsnap</h1>
         </Link>
-        {showCamera && (
-          <div>
-            <button
-              className="cursor-pointer"
-              onClick={() => setIsTorchOn((torch) => !torch)}
-            >
-              <Icon
-                src={isTorchOn ? FlashOnIcon : FlashOffIcon}
-                className="size-10"
-              />
-            </button>
-            <button
-              className="cursor-pointer"
-              onClick={() => handleCloseCamera()}
-            >
-              <Icon src={CloseIcon} className="size-10" />
-            </button>
-          </div>
-        )}
       </header>
 
       <main className="flex flex-col flex-1 gap-6 p-6 overflow-hidden">
@@ -221,7 +193,10 @@ export default function Home() {
 
       {/* Camera overlay (renders below the header, close is handled in header) */}
       {showCamera && (
-        <CameraView onCapture={scanner.insertImages} isTorchOn={isTorchOn} />
+        <CameraView
+          onCapture={scanner.insertImages}
+          onClose={() => setShowCamera(false)}
+        />
       )}
       <footer className="text-xs text-gray-400 text-center pb-4">
         app version: {process.env.NEXT_PUBLIC_VERSION}
