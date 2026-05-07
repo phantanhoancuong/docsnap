@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2] - 2026/05/07
+
+### Fixed
+
+- Loading overlay now stays visible during service worker updates instead of flashing before the page reloads.
+- Mid-session service worker updates are no longer applied immediately; they are deferred to the next app open to avoid interrupting the user.
+
 ## [1.0.1] - 2026/05/06
 
 ### Performance
