@@ -11,28 +11,26 @@ import { useEffect, useRef } from "react";
  *    - Capture a JPEG photo from the current video frame as a File.
  *
  * @returns videoRef - Ref to attach to the video element.
- * @returns takePhoto - Function to capture a photo from the current frame.
+ * @returns capturePhoto - Function to capture a photo from the current frame.
  */
 export const useCamera = ({ isTorchOn }: { isTorchOn: boolean }) => {
+  const streamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const trackRef = useRef<MediaStreamTrack | null>(null);
   const isTorchOnRef = useRef(isTorchOn);
 
-  const applyTorch = (value: boolean) => {
-    const track = trackRef.current;
-    if (!track) return;
-    if (!(track.getCapabilities() as any).torch) return;
-    track.applyConstraints({ advanced: [{ torch: value } as any] });
-  };
-
+  /**
+   * Sync the torch state ref and apply it to the active track whenever `isTorchOn` changes.
+   * The ref is kept in sync so the initial torch state can be applied after the stream starts.
+   */
   useEffect(() => {
     isTorchOnRef.current = isTorchOn;
     applyTorch(isTorchOn);
   }, [isTorchOn]);
 
   /**
-   * Request the camera stream and attach it to the video element.
+   * Request the camera stream and attach it the video element on mount.
    * Stop all tracks on unmount to release the camera hardware.
+   * Use `streamRef` for cleanup (`videoRef.current` is `null` by the time cleanup runs).
    */
   useEffect(() => {
     const start = async () => {
@@ -48,7 +46,7 @@ export const useCamera = ({ isTorchOn }: { isTorchOn: boolean }) => {
           },
         });
 
-        trackRef.current = stream.getVideoTracks()[0];
+        streamRef.current = stream;
         videoRef.current.srcObject = stream;
 
         // Block until the browser has negotiated the stream resolution.
@@ -67,10 +65,23 @@ export const useCamera = ({ isTorchOn }: { isTorchOn: boolean }) => {
     start();
 
     return () => {
-      const stream = videoRef.current?.srcObject as MediaStream | null;
-      stream?.getTracks().forEach((track) => track.stop());
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     };
   }, []);
+
+  /**
+   * Apply the torch constraint to the active video track.
+   * No-ops if the stream is not yet active or torch is no supported by the device.
+   *
+   * @param value - Whether to turn the torch on or off.
+   */
+  const applyTorch = (value: boolean) => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track) return;
+    if (!(track.getCapabilities() as any).torch) return;
+    track.applyConstraints({ advanced: [{ torch: value } as any] });
+  };
 
   /**
    * Capture a photo from the current video frame.
@@ -90,10 +101,10 @@ export const useCamera = ({ isTorchOn }: { isTorchOn: boolean }) => {
 
     return new Promise((resolve, reject) => {
       canvas.toBlob(
-        (b) =>
-          b
+        (blob) =>
+          blob
             ? resolve(
-                new File([b], `photo_${Date.now()}.jpg`, {
+                new File([blob], `photo_${Date.now()}.jpg`, {
                   type: "image/jpeg",
                 }),
               )
