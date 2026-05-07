@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from "react";
 
+import { Icon } from "@/app/components/server";
+
 import { useCamera } from "@/app/hooks/useCamera";
+
+import { CloseIcon, FlashOffIcon, FlashOnIcon } from "@/app/assets/icons";
 
 /**
  * Full-screen camera overlay for capturing photos.
@@ -15,14 +19,18 @@ import { useCamera } from "@/app/hooks/useCamera";
  *    - Display the live camera feed.
  *    - Handle photo capture with a shutter flash effect.
  *    - Prevent double captures while a capture is in progress.
+ *
+ * @param onCapture - Callback invoked with the captured photo as a File array.
+ * @param onClose - Callback invoked when the overlay is dismissed.
  */
 const CameraView = ({
   onCapture,
-  isTorchOn,
+  onClose,
 }: {
   onCapture: (files: File[]) => void;
-  isTorchOn: boolean;
+  onClose: () => void;
 }) => {
+  const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
   const { videoRef, capturePhoto } = useCamera({ isTorchOn });
 
   // Lock page scroll while the overlay is open.
@@ -48,7 +56,21 @@ const CameraView = ({
   };
 
   return (
-    <div className="flex flex-col fixed inset-x-0 top-20 bottom-0 z-20 bg-background">
+    <div className="flex flex-col fixed inset-x-0 top-0 bottom-0 z-20 bg-background">
+      <div className="flex items-center justify-between h-20 px-6">
+        <button
+          className="cursor-pointer"
+          onClick={() => setIsTorchOn((torch) => !torch)}
+        >
+          <Icon
+            src={isTorchOn ? FlashOnIcon : FlashOffIcon}
+            className="size-10"
+          />
+        </button>
+        <button className="cursor-pointer" onClick={() => onClose()}>
+          <Icon src={CloseIcon} className="size-10" />
+        </button>
+      </div>
       {/* Video feed with shutter flash overlay */}
       <div className="relative flex flex-1 min-h-0 items-center w-full">
         <video
@@ -60,7 +82,6 @@ const CameraView = ({
 
         {shuttering && <div className="absolute inset-0 bg-background z-20" />}
       </div>
-
       {/* Photo capture button */}
       <div className="flex justify-center shrink-0 py-4">
         <button

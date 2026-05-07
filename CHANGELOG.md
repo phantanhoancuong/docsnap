@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.3] - 2026/05/07
+
+### Fixed
+
+- Camera stream is now properly released when closing the overlay.
+
+### Changed
+
+- Torch and close controls moved into the camera overlay. The app header is now clean while the camera is open.
+
 ## [1.0.2] - 2026/05/07
 
 ### Fixed
