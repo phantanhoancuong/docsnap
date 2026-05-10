@@ -105,13 +105,18 @@ export const processImage = async (
 
   const mask = await runInference(sess, image);
 
-  const quad = await maskToQuad(cv, mask, image.width, image.height);
+  const quad: [Point, Point, Point, Point] = (await maskToQuad(
+    cv,
+    mask,
+    image.width,
+    image.height,
+  )) ?? [
+    { x: 0, y: 0 },
+    { x: image.width, y: 0 },
+    { x: image.width, y: image.height },
+    { x: 0, y: image.height },
+  ];
 
-  if (quad === null) {
-    throw new Error(
-      "No document detected -- make sure the document is fully visible and well-lit",
-    );
-  }
   const warpedCanvas = warpPerspective(image, quad);
 
   const enhancedCanvas = enhanceContrast(warpedCanvas, mode);
