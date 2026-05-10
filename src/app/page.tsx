@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 
-import { ImageGallery } from "@/app/components/client";
+import { ImageGallery, InspectionOverlay } from "@/app/components/client";
 import { Icon } from "@/app/components/server";
 
 import { useState } from "react";
@@ -48,6 +48,41 @@ export default function Home() {
   const [showFailedOverlay, setShowFailedOverlay] = useState<boolean>(false);
   const [showCamera, setShowCamera] = useState<boolean>(false);
 
+  const [inspectedImage, setInspectedImage] = useState<{
+    imageKey: string;
+    imageUrl: string;
+    scannedUrl: string | null;
+    imageIndex: number;
+  } | null>(null);
+
+  const getPreviousImage = () => {
+    if (!inspectedImage || inspectedImage.imageIndex === 1) return;
+    const previousKey = scanner.imageKeys[inspectedImage.imageIndex - 2];
+    const previousEntry = scanner.images.get(previousKey);
+    setInspectedImage({
+      imageKey: previousKey,
+      imageUrl: previousEntry!.originalImage.url,
+      scannedUrl: previousEntry!.processedImage?.url ?? null,
+      imageIndex: inspectedImage.imageIndex - 1,
+    });
+  };
+
+  const getNextImage = () => {
+    if (
+      !inspectedImage ||
+      inspectedImage.imageIndex === scanner.imageKeys.length
+    )
+      return;
+    const nextKey = scanner.imageKeys[inspectedImage.imageIndex];
+    const nextEntry = scanner.images.get(nextKey);
+    setInspectedImage({
+      imageKey: nextKey,
+      imageUrl: nextEntry!.originalImage.url,
+      scannedUrl: nextEntry!.processedImage?.url ?? null,
+      imageIndex: inspectedImage.imageIndex + 1,
+    });
+  };
+
   // Show the failed images overlay instead of exporting if any images failed.
   const handleDownload = () => {
     if (scanner.failedCount > 0) {
@@ -55,6 +90,10 @@ export default function Home() {
       return;
     }
     scanner.exportPDF();
+  };
+
+  const handleInspectionClose = () => {
+    setInspectedImage(null);
   };
 
   return (
@@ -171,6 +210,14 @@ export default function Home() {
             onRemove={scanner.removeImage}
             onReorder={scanner.reorderImages}
             isProcessing={scanner.isProcessing}
+            onSelect={(imageKey, activeUrl, scannedUrl) => {
+              setInspectedImage({
+                imageKey,
+                imageUrl: activeUrl!,
+                scannedUrl: scannedUrl,
+                imageIndex: scanner.imageKeys.indexOf(imageKey) + 1,
+              });
+            }}
           />
         </div>
       </main>
@@ -196,6 +243,19 @@ export default function Home() {
         <CameraView
           onCapture={scanner.insertImages}
           onClose={() => setShowCamera(false)}
+        />
+      )}
+
+      {/* Inspection overlay (shown when an image is tapped in the gallery) */}
+      {inspectedImage && (
+        <InspectionOverlay
+          onClose={handleInspectionClose}
+          activeImageUrl={inspectedImage.imageUrl}
+          scannedImageUrl={inspectedImage.scannedUrl}
+          activeIndex={inspectedImage.imageIndex}
+          totalImages={scanner.imageKeys.length}
+          getPreviousImage={getPreviousImage}
+          getNextImage={getNextImage}
         />
       )}
       <footer className="text-xs text-gray-400 text-center pb-4">

@@ -45,6 +45,7 @@ const ImageCard = React.memo(
     isProcessing,
     onRetry,
     onRemove,
+    onSelect,
   }: {
     imageKey: string;
     entry: ImageEntry;
@@ -52,6 +53,11 @@ const ImageCard = React.memo(
     isProcessing: boolean;
     onRetry: (imageKey: string) => void;
     onRemove: (imageKey: string) => void;
+    onSelect: (
+      imageKey: string,
+      activeUrl: string,
+      scannedUrl: string | null,
+    ) => void;
   }) {
     const {
       attributes,
@@ -83,7 +89,18 @@ const ImageCard = React.memo(
         {...listeners}
       >
         {processPhase === "notProcessed" && (
-          <img src={entry.originalImage.url} className="w-full" />
+          <img
+            src={entry.originalImage.url}
+            className="w-full"
+            onClick={() => {
+              if (isDragging) return;
+              onSelect(
+                imageKey,
+                entry.originalImage.url,
+                entry.processedImage?.url || null,
+              );
+            }}
+          />
         )}
 
         {processPhase === "processing" && (
@@ -97,7 +114,18 @@ const ImageCard = React.memo(
         )}
 
         {processPhase === "processed" && (
-          <img src={entry.processedImage!.url} className="w-full" />
+          <img
+            src={entry.processedImage!.url}
+            className="w-full"
+            onClick={() => {
+              if (isDragging) return;
+              onSelect(
+                imageKey,
+                entry.originalImage.url,
+                entry.processedImage?.url || null,
+              );
+            }}
+          />
         )}
 
         {processPhase === "failed" && (
@@ -172,6 +200,7 @@ export default function ImageGallery({
   onRetry,
   onRemove,
   onReorder,
+  onSelect,
 }: {
   imageKeys: string[];
   images: Map<string, ImageEntry>;
@@ -179,6 +208,11 @@ export default function ImageGallery({
   onRetry: (imageKey: string) => void;
   onRemove: (imageKey: string) => void;
   onReorder: (activeKey: string, overKey: string) => void;
+  onSelect: (
+    imageKey: string,
+    activeUrl: string,
+    scannedUrl: string | null,
+  ) => void;
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -214,6 +248,7 @@ export default function ImageGallery({
               isProcessing={isProcessing}
               onRetry={onRetry}
               onRemove={onRemove}
+              onSelect={onSelect}
             />
           ))}
         </div>
