@@ -50,13 +50,18 @@ const CameraView = ({
   /**
    * Trigger a brief shutter flash by showing a background-colored overlay over the video feed for 150ms.
    */
-  const shutter = async () => {
-    setShuttering(true);
-    setTimeout(() => setShuttering(false), 150);
+  const shutter = (): Promise<void> => {
+    return new Promise((resolve) => {
+      setShuttering(true);
+      setTimeout(() => {
+        setShuttering(false);
+        resolve();
+      }, 150);
+    });
   };
 
   return (
-    <div className="flex flex-col fixed inset-x-0 top-0 bottom-0 z-20 bg-background">
+    <div className="flex flex-col fixed inset-x-0 top-0 bottom-0 z-50 bg-background">
       <div className="flex items-center justify-between h-20 px-6">
         <button
           className="cursor-pointer"

@@ -36,6 +36,7 @@ const InspectionOverlay = ({
   totalImages,
   getPreviousImage,
   getNextImage,
+  retakeImage,
 }: {
   onClose: () => void;
   activeImageUrl: string;
@@ -44,6 +45,7 @@ const InspectionOverlay = ({
   totalImages: number;
   getPreviousImage: () => void;
   getNextImage: () => void;
+  retakeImage: () => void;
 }) => {
   const touchStartX = useRef<number>(0);
 
@@ -140,24 +142,23 @@ const InspectionOverlay = ({
 
       {/* Tools */}
       <div className="flex items-center justify-center gap-10 shrink-0 px-6 py-2 bg-highlight/50">
-        <div className="flex flex-col items-center">
-          <button className="cursor-pointer py-1">
-            <Icon src={RetakePhotoIcon} className="size-6" />
-          </button>
+        <button
+          className="flex flex-col gap-1 items-center cursor-pointer py-1"
+          onClick={() => {
+            retakeImage();
+          }}
+        >
+          <Icon src={RetakePhotoIcon} className="size-6" />
           <p className="text-xs">Retake</p>
-        </div>
-        <div className="flex flex-col items-center">
-          <button className="cursor-pointer py-1">
-            <Icon src={RotateLeftIcon} className="size-6" />
-          </button>
-          <p className="text-xs">Rotate</p>
-        </div>
-        <div className="flex flex-col items-center">
-          <button className="cursor-pointer py-1">
-            <Icon src={CropIcon} className="size-6" />
-          </button>
-          <p className="text-xs">Crop</p>
-        </div>
+        </button>
+        <button className="flex flex-col gap-1 items-center cursor-pointer py-1">
+          <Icon src={RotateLeftIcon} className="size-6" />
+          <p className="text-xs">WIP</p>
+        </button>
+        <button className="flex flex-col gap-1 items-center cursor-pointer py-1">
+          <Icon src={CropIcon} className="size-6" />
+          <p className="text-xs">WIP</p>
+        </button>
       </div>
     </div>
   );

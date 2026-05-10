@@ -96,6 +96,33 @@ export default function Home() {
     setInspectedImage(null);
   };
 
+  const handleRetake = () => {
+    setShowCamera(true);
+  };
+
+  const handleCameraCapture = (files: File[]) => {
+    if (!inspectedImage) {
+      scanner.insertImages(files);
+    } else {
+      const [file] = files;
+
+      const result = scanner.retakeImage(inspectedImage.imageKey, file);
+      if (!result) return;
+
+      setInspectedImage((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          imageKey: result.newImageKey,
+          imageUrl: result.blobUrl,
+          scannedUrl: null,
+        };
+      });
+
+      setShowCamera(false);
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-screen">
       {/* Header */}
@@ -241,7 +268,7 @@ export default function Home() {
       {/* Camera overlay (renders below the header, close is handled in header) */}
       {showCamera && (
         <CameraView
-          onCapture={scanner.insertImages}
+          onCapture={handleCameraCapture}
           onClose={() => setShowCamera(false)}
         />
       )}
@@ -256,6 +283,7 @@ export default function Home() {
           totalImages={scanner.imageKeys.length}
           getPreviousImage={getPreviousImage}
           getNextImage={getNextImage}
+          retakeImage={handleRetake}
         />
       )}
       <footer className="text-xs text-gray-400 text-center pb-4">

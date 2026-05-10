@@ -195,7 +195,7 @@ export const useScanner = () => {
    * @param oldImageKey - The key of the image to replace.
    * @param file - The new image file to insert in its place.
    */
-  const retakeImage = (oldImageKey: string, file: File): void => {
+  const retakeImage = (oldImageKey: string, file: File) => {
     const oldImageKeyIndex = imageKeysRef.current.indexOf(oldImageKey);
     if (oldImageKeyIndex === -1) return;
 
@@ -230,6 +230,8 @@ export const useScanner = () => {
       });
       return updated;
     });
+
+    return { newImageKey, blobUrl };
   };
 
   /**
