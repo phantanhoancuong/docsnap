@@ -184,6 +184,55 @@ export const useScanner = () => {
   };
 
   /**
+   * Replace an existing image in-place with a new one, preserving its position in the list.
+   *
+   * Behavior:
+   *    - Cancel any pending or in-flight processing for the old image.
+   *    - Revoke the old image's blob URLs.
+   *    - Insert the new image at the same index in `imageKeys`.
+   *    - Reset the new entry to `notProcessed`.
+   *
+   * @param oldImageKey - The key of the image to replace.
+   * @param file - The new image file to insert in its place.
+   */
+  const retakeImage = (oldImageKey: string, file: File): void => {
+    const oldImageKeyIndex = imageKeysRef.current.indexOf(oldImageKey);
+    if (oldImageKeyIndex === -1) return;
+
+    cancel(oldImageKey);
+
+    const oldEntry = imagesRef.current.get(oldImageKey);
+    if (oldEntry) {
+      URL.revokeObjectURL(oldEntry.originalImage.url);
+      blobUrlsRef.current.delete(oldEntry.originalImage.url);
+      if (oldEntry.processedImage) {
+        URL.revokeObjectURL(oldEntry.processedImage.url);
+      }
+    }
+
+    const newImageKey = uuidv4();
+    const blobUrl = URL.createObjectURL(file);
+    blobUrlsRef.current.add(blobUrl);
+
+    setImageKeys((prev) =>
+      prev.map((key) => (key === oldImageKey ? newImageKey : key)),
+    );
+
+    setImages((prev) => {
+      const updated = new Map(prev);
+      updated.delete(oldImageKey);
+      updated.set(newImageKey, {
+        processPhase: "notProcessed",
+        scanMode,
+        imageKey: newImageKey,
+        originalName: file.name,
+        originalImage: { file, url: blobUrl },
+      });
+      return updated;
+    });
+  };
+
+  /**
    * Enqueue all stale or unprocessed images in current display order.
    * Already processed images under the current mode are skipped.
    */
@@ -363,6 +412,7 @@ export const useScanner = () => {
     retryImage,
     removeImage,
     reorderImages,
+    retakeImage,
     exportPDF,
   };
 };
