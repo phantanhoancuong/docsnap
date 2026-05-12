@@ -20,7 +20,7 @@ import {
   ScanIcon,
 } from "@/app/assets/icons";
 
-import { OverlayState, ScanMode } from "@/app/types";
+import { Point, ScanMode } from "@/app/types";
 
 import {
   CameraView,
@@ -34,24 +34,55 @@ const SCAN_MODE_LABELS: Record<ScanMode, string> = {
   color: "Color",
 };
 
+type OverlayState =
+  | { type: "none" }
+  | { type: "camera" }
+  | {
+      type: "inspection";
+      imageKey: string;
+      imageUrl: string;
+      scannedUrl: string | null;
+      imageIndex: number;
+      corners: [Point, Point, Point, Point] | null;
+    }
+  | {
+      type: "crop";
+      imageKey: string;
+      imageUrl: string;
+      corners: [Point, Point, Point, Point] | null;
+    }
+  | { type: "failedImages" }
+  | { type: "exportError" };
+
 /**
  * Home page component.
  *
  * Responsibilities:
- *    - Handle image uploads and camera capture.
+ *    - Handle image uploads.
  *    - Allow user to switch scan modes.
  *    - Explicitly trigger scanning with the scan button.
  *    - Trigger processing and download with the download button.
- *    - Display uploaded images in a sortable gallery.
- *    - Manage all overlay visibility through a union state.
- *  - Support image inspection, retake, and crop from the inspection overlay.
+ *    - Display uploaded images in a sortaable gallery.
+ *    - Show a dismissible banner when PDF export fails.
+ *    - Manage camera overlay visibility and close action.
+ * @returns
  */
 export default function Home() {
   const scanner = useScanner();
-  const [overlay, setOverlay] = useState<OverlayState>({ type: "none" });
+  const [showFailedOverlay, setShowFailedOverlay] = useState<boolean>(false);
+  const [showCamera, setShowCamera] = useState<boolean>(false);
+  const [showCropOverlay, setShowCropOverlay] = useState<boolean>(false);
+
+  const [inspectedImage, setInspectedImage] = useState<{
+    imageKey: string;
+    imageUrl: string;
+    scannedUrl: string | null;
+    imageIndex: number;
+    corners: [Point, Point, Point, Point] | null;
+  } | null>(null);
 
   /**
-   * Navigate to the image at the given 0-based index and update the inspection overlay.
+   * Navigate to the image at the given 0-based index and update `inspectedImage`.
    *
    * @param index - 0-based index into `scanner.imageKeys`.
    */
@@ -59,8 +90,7 @@ export default function Home() {
     const imageKey = scanner.imageKeys[index];
     const entry = scanner.images.get(imageKey);
     if (!entry) return;
-    setOverlay({
-      type: "inspection",
+    setInspectedImage({
       imageKey,
       imageUrl: entry.originalImage.url,
       scannedUrl: entry.processedImage?.url ?? null,
@@ -71,80 +101,76 @@ export default function Home() {
 
   /** Navigate to the previous image in the gallery. */
   const getPreviousImage = (): void => {
-    if (overlay.type !== "inspection" || overlay.imageIndex === 1) return;
-    navigateToImage(overlay.imageIndex - 2);
+    if (!inspectedImage || inspectedImage.imageIndex === 1) return;
+    navigateToImage(inspectedImage.imageIndex - 2);
   };
 
   /** Navigate to the next image in the gallery. */
   const getNextImage = (): void => {
     if (
-      overlay.type !== "inspection" ||
-      overlay.imageIndex === scanner.imageKeys.length
+      !inspectedImage ||
+      inspectedImage.imageIndex === scanner.imageKeys.length
     )
       return;
-    navigateToImage(overlay.imageIndex);
+    navigateToImage(inspectedImage.imageIndex);
   };
 
-  /** Initiate PDF export, or show the failed images overlay if any images failed. Prevent exporting a PDF with missing pages. */
-  const handleDownload = (): void => {
+  /**
+   * Initiate PDF export, or show the falied images overlay if any images failed.
+   * Prevent exporting a PDF with missing pages.
+   */
+  const handleDownload = () => {
     if (scanner.failedCount > 0) {
-      setOverlay({ type: "failedImages" });
+      setShowFailedOverlay(true);
       return;
     }
     scanner.exportPDF();
   };
 
+  /** Close the inspection overlay. */
+  const handleInspectionClose = () => {
+    setInspectedImage(null);
+  };
+
+  /** Open the camera overlay to retake the currently inspected image. */
+  const handleRetake = () => {
+    setShowCamera(true);
+  };
+
   /** Open the crop overlay for the currently inspected image. */
-  const handleCrop = (): void => {
-    if (overlay.type !== "inspection") return;
-    setOverlay({
-      type: "crop",
-      imageKey: overlay.imageKey,
-      imageUrl: overlay.imageUrl,
-      corners: overlay.corners,
-    });
+  const handleCrop = () => {
+    setShowCropOverlay(true);
   };
 
   /**
-   * Route a camera capture to either insert or retake an image.
+   * Route a camera capture to either insert or retake depending on context.
    *
-   * If the camera was opened in retake mode, replace the inspected image in-place and return to inspection. Otherwise insert as new images.
+   * If an imagae is being inspected, replace it in-place and update `inspectedImage`.
+   * Otherwise, insert the captured files as new images.
    *
-   * @param files - Captured files from CameraView.
+   * @param files - Captured files from `CameraView`.
    */
-  const handleCameraCapture = (files: File[]): void => {
-    if (overlay.type !== "camera") return;
-
-    if (overlay.mode === "capture") {
+  const handleCameraCapture = (files: File[]) => {
+    if (!inspectedImage) {
       scanner.insertImages(files);
-      setOverlay({ type: "none" });
-      return;
+    } else {
+      const [file] = files;
+
+      const result = scanner.retakeImage(inspectedImage.imageKey, file);
+      if (!result) return;
+
+      setInspectedImage((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          imageKey: result.newImageKey,
+          imageUrl: result.blobUrl,
+          scannedUrl: null,
+        };
+      });
+
+      setShowCamera(false);
     }
-
-    const [file] = files;
-    const result = scanner.retakeImage(overlay.imageKey, file);
-    if (!result) return;
-
-    setOverlay({
-      type: "inspection",
-      imageKey: result.newImageKey,
-      imageUrl: result.blobUrl,
-      scannedUrl: null,
-      imageIndex: overlay.imageIndex,
-      corners: null,
-    });
-  };
-
-  /** Open the camera in retake mode for the currently inspected image. */
-  const handleRetake = (): void => {
-    if (overlay.type !== "inspection") return;
-    setOverlay({
-      type: "camera",
-      mode: "retake",
-      imageKey: overlay.imageKey,
-      imageIndex: overlay.imageIndex,
-      corners: overlay.corners,
-    });
   };
 
   return (
@@ -189,7 +215,7 @@ export default function Home() {
             {/* Open camera overlay */}
             <button
               className="flex items-center justify-center gap-2 p-6 border-2 rounded-sm cursor-pointer whitespace-nowrap"
-              onClick={() => setOverlay({ type: "camera", mode: "capture" })}
+              onClick={() => setShowCamera(true)}
             >
               <Icon src={CameraIcon} />
               <span>Take Photos</span>
@@ -262,11 +288,10 @@ export default function Home() {
             onReorder={scanner.reorderImages}
             isProcessing={scanner.isProcessing}
             onSelect={(imageKey, activeUrl, scannedUrl) => {
-              setOverlay({
-                type: "inspection",
+              setInspectedImage({
                 imageKey,
-                imageUrl: activeUrl,
-                scannedUrl,
+                imageUrl: activeUrl!,
+                scannedUrl: scannedUrl,
                 imageIndex: scanner.imageKeys.indexOf(imageKey) + 1,
                 corners: scanner.images.get(imageKey)?.corners ?? null,
               });
@@ -275,15 +300,15 @@ export default function Home() {
         </div>
       </main>
 
-      {/* Failed images modal */}
-      {overlay.type === "failedImages" && (
+      {/* Failed images overlay */}
+      {showFailedOverlay && (
         <FailedImagesOverlay
           failedCount={scanner.failedCount}
-          onClose={() => setOverlay({ type: "none" })}
+          onClose={() => setShowFailedOverlay(false)}
         />
       )}
 
-      {/* Export error modal */}
+      {/* Export error overlay (shown when PDF generation fails) */}
       {scanner.exportError && (
         <ExportErrorOverlay
           errorMessage={scanner.exportError}
@@ -291,31 +316,31 @@ export default function Home() {
         />
       )}
 
-      {/* Camera overlay */}
-      {overlay.type === "camera" && (
+      {/* Camera overlay (renders below the header, close is handled in header) */}
+      {showCamera && (
         <CameraView
           onCapture={handleCameraCapture}
-          onClose={() => setOverlay({ type: "none" })}
+          onClose={() => setShowCamera(false)}
         />
       )}
 
-      {/* Crop overlay */}
-      {overlay.type === "crop" && (
+      {/*Crop overlay (shown when "Crop" is tapped in the inspection overlay) */}
+      {showCropOverlay && (
         <CropOverlay
-          onClose={() => setOverlay({ type: "none" })}
+          onClose={() => setShowCropOverlay(false)}
           onConfirm={() => {}}
-          imageUrl={overlay.imageUrl}
-          corners={overlay.corners}
+          imageUrl={inspectedImage?.imageUrl || ""}
+          corners={inspectedImage?.corners || null}
         />
       )}
 
-      {/* Inspection overlay */}
-      {overlay.type === "inspection" && (
+      {/* Inspection overlay (shown when an image is tapped in the gallery) */}
+      {inspectedImage && (
         <InspectionOverlay
-          onClose={() => setOverlay({ type: "none" })}
-          activeImageUrl={overlay.imageUrl}
-          scannedImageUrl={overlay.scannedUrl}
-          activeIndex={overlay.imageIndex}
+          onClose={handleInspectionClose}
+          activeImageUrl={inspectedImage.imageUrl}
+          scannedImageUrl={inspectedImage.scannedUrl}
+          activeIndex={inspectedImage.imageIndex}
           totalImages={scanner.imageKeys.length}
           getPreviousImage={getPreviousImage}
           getNextImage={getNextImage}
