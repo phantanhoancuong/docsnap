@@ -18,4 +18,5 @@ export type ImageEntry = {
   originalImage: ImageFile;
   processedImage?: ImageFile;
   errorMessage?: string;
+  corners?: [Point, Point, Point, Point];
 };

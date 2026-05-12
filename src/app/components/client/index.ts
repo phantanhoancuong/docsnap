@@ -1,4 +1,5 @@
 export { default as CameraView } from "./CameraView";
+export { default as CropOverlay } from "./CropOverlay";
 export { default as ImageGallery } from "./ImageGallery";
 export { default as InspectionOverlay } from "./InspectionOverlay";
 export { default as LoadingOverlay } from "./LoadingOverlay";

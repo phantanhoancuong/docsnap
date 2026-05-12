@@ -9,6 +9,7 @@ import {
   MEAN,
   PIXEL_NUMBER,
   STD,
+  defaultQuad,
   enhanceContrast,
   maskToQuad,
   warpPerspective,
@@ -105,23 +106,44 @@ export const processImage = async (
 
   const mask = await runInference(sess, image);
 
-  const quad: [Point, Point, Point, Point] = (await maskToQuad(
-    cv,
-    mask,
-    image.width,
-    image.height,
-  )) ?? [
-    { x: 0, y: 0 },
-    { x: image.width, y: 0 },
-    { x: image.width, y: image.height },
-    { x: 0, y: image.height },
-  ];
+  const quad: [Point, Point, Point, Point] =
+    (await maskToQuad(cv, mask, image.width, image.height)) ??
+    defaultQuad(image.width, image.height);
 
-  const warpedCanvas = warpPerspective(image, quad);
-
-  const enhancedCanvas = enhanceContrast(warpedCanvas, mode);
   const mimeType = imageFile.file.type || "image/jpeg";
+  const fileName = imageFile.file.name.replace(/(\.[^.]+)?$/, "_scanned$1");
+  const processedImage = await warpAndEncode(
+    image,
+    quad,
+    mode,
+    mimeType,
+    fileName,
+  );
+
+  return { processedImage, corners: quad };
+};
+
+/**
+ * Warp, enhance, and encode an image region into an `ImageFile`.
+ *
+ * @param image - Source image element.
+ * @param quad - Four corner points defining the document region in image space coordinates.
+ * @param mode - Scan mode for constrast enhancement.
+ * @param mimeType - Output MIME type (e.g. "image/jpeg").
+ * @param fileName - Output file name.
+ * @returns Processed `ImageFile` with a new blob URL.
+ */
+export const warpAndEncode = async (
+  image: HTMLImageElement,
+  quad: [Point, Point, Point, Point],
+  mode: ScanMode,
+  mimeType: string,
+  fileName: string,
+): Promise<ImageFile> => {
+  const warpedCanvas = warpPerspective(image, quad);
+  const enhancedCanvas = enhanceContrast(warpedCanvas, mode);
   const quality = mimeType === "image/jpeg" ? 0.92 : undefined;
+
   const blob = await new Promise<Blob>((resolve, reject) =>
     enhancedCanvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
@@ -130,15 +152,8 @@ export const processImage = async (
     ),
   );
 
-  const processedFileName = imageFile.file.name.replace(
-    /(\.[^.]+)?$/,
-    "_scanned$1",
-  );
-  const processedFile = new File([blob], processedFileName, { type: mimeType });
-  const processedUrl = URL.createObjectURL(blob);
-
   return {
-    processedImage: { file: processedFile, url: processedUrl },
-    corners: quad,
+    file: new File([blob], fileName, { type: mimeType }),
+    url: URL.createObjectURL(blob),
   };
 };

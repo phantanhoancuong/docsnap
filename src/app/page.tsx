@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 
-import { ImageGallery, InspectionOverlay } from "@/app/components/client";
+import {
+  CropOverlay,
+  ImageGallery,
+  InspectionOverlay,
+} from "@/app/components/client";
 import { Icon } from "@/app/components/server";
 
 import { useState } from "react";
@@ -16,7 +20,7 @@ import {
   ScanIcon,
 } from "@/app/assets/icons";
 
-import { ScanMode } from "@/app/types";
+import { Point, ScanMode } from "@/app/types";
 
 import {
   CameraView,
@@ -38,7 +42,7 @@ const SCAN_MODE_LABELS: Record<ScanMode, string> = {
  *    - Allow user to switch scan modes.
  *    - Explicitly trigger scanning with the scan button.
  *    - Trigger processing and download with the download button.
- *    - Display uploaded images in a sortable gallery.
+ *    - Display uploaded images in a sortaable gallery.
  *    - Show a dismissible banner when PDF export fails.
  *    - Manage camera overlay visibility and close action.
  * @returns
@@ -47,12 +51,14 @@ export default function Home() {
   const scanner = useScanner();
   const [showFailedOverlay, setShowFailedOverlay] = useState<boolean>(false);
   const [showCamera, setShowCamera] = useState<boolean>(false);
+  const [showCropOverlay, setCropOverlay] = useState<boolean>(false);
 
   const [inspectedImage, setInspectedImage] = useState<{
     imageKey: string;
     imageUrl: string;
     scannedUrl: string | null;
     imageIndex: number;
+    corners: [Point, Point, Point, Point] | null;
   } | null>(null);
 
   const getPreviousImage = () => {
@@ -64,6 +70,7 @@ export default function Home() {
       imageUrl: previousEntry!.originalImage.url,
       scannedUrl: previousEntry!.processedImage?.url ?? null,
       imageIndex: inspectedImage.imageIndex - 1,
+      corners: previousEntry!.corners ?? null,
     });
   };
 
@@ -80,6 +87,7 @@ export default function Home() {
       imageUrl: nextEntry!.originalImage.url,
       scannedUrl: nextEntry!.processedImage?.url ?? null,
       imageIndex: inspectedImage.imageIndex + 1,
+      corners: nextEntry!.corners ?? null,
     });
   };
 
@@ -98,6 +106,10 @@ export default function Home() {
 
   const handleRetake = () => {
     setShowCamera(true);
+  };
+
+  const handleCrop = () => {
+    setCropOverlay(true);
   };
 
   const handleCameraCapture = (files: File[]) => {
@@ -243,6 +255,7 @@ export default function Home() {
                 imageUrl: activeUrl!,
                 scannedUrl: scannedUrl,
                 imageIndex: scanner.imageKeys.indexOf(imageKey) + 1,
+                corners: scanner.images.get(imageKey)?.corners ?? null,
               });
             }}
           />
@@ -273,6 +286,16 @@ export default function Home() {
         />
       )}
 
+      {/*Crop overlay (shown when "Crop" is tapped in the inspection overlay) */}
+      {showCropOverlay && (
+        <CropOverlay
+          onClose={() => setCropOverlay(false)}
+          onConfirm={() => {}}
+          imageUrl={inspectedImage?.imageUrl || ""}
+          corners={inspectedImage?.corners || null}
+        />
+      )}
+
       {/* Inspection overlay (shown when an image is tapped in the gallery) */}
       {inspectedImage && (
         <InspectionOverlay
@@ -284,6 +307,7 @@ export default function Home() {
           getPreviousImage={getPreviousImage}
           getNextImage={getNextImage}
           retakeImage={handleRetake}
+          cropImage={handleCrop}
         />
       )}
       <footer className="text-xs text-gray-400 text-center pb-4">

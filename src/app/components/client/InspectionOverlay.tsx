@@ -37,6 +37,7 @@ const InspectionOverlay = ({
   getPreviousImage,
   getNextImage,
   retakeImage,
+  cropImage,
 }: {
   onClose: () => void;
   activeImageUrl: string;
@@ -46,6 +47,7 @@ const InspectionOverlay = ({
   getPreviousImage: () => void;
   getNextImage: () => void;
   retakeImage: () => void;
+  cropImage: () => void;
 }) => {
   const touchStartX = useRef<number>(0);
 
@@ -155,9 +157,14 @@ const InspectionOverlay = ({
           <Icon src={RotateLeftIcon} className="size-6" />
           <p className="text-xs">WIP</p>
         </button>
-        <button className="flex flex-col gap-1 items-center cursor-pointer py-1">
+        <button
+          className="flex flex-col gap-1 items-center cursor-pointer py-1"
+          onClick={() => {
+            cropImage();
+          }}
+        >
           <Icon src={CropIcon} className="size-6" />
-          <p className="text-xs">WIP</p>
+          <p className="text-xs">Crop</p>
         </button>
       </div>
     </div>

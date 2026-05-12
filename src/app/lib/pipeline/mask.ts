@@ -8,6 +8,61 @@ import {
 } from "@/app/lib/pipeline/constants";
 
 /**
+ * Sort 4 points into [TL, TR, BR, BL] order using the centroid to classify each point by quadrant.
+ *
+ * This is used for rendering and confirming the detected document corners when the user manually adjusts them.
+ * This is NOT to be used during drag, to keep drag indices stable.
+ *
+ * @param points - Four corner points in any order.
+ * @returns Points sorted as [TL, TR, BR, BL].
+ */
+export const sortQuad = (
+  points: [Point, Point, Point, Point],
+): [Point, Point, Point, Point] => {
+  const cx = points.reduce((sum, p) => sum + p.x, 0) / 4;
+  const cy = points.reduce((sum, p) => sum + p.y, 0) / 4;
+
+  const sorted = [...points].sort((a, b) => {
+    const angleA = Math.atan2(a.y - cy, a.x - cx);
+    const angleB = Math.atan2(b.y - cy, b.x - cx);
+    return angleA - angleB;
+  });
+
+  const tlIndex = sorted.reduce(
+    (best, p, i) => (p.x + p.y < sorted[best].x + sorted[best].y ? i : best),
+    0,
+  );
+
+  const reordered = [...sorted.slice(tlIndex), ...sorted.slice(0, tlIndex)] as [
+    Point,
+    Point,
+    Point,
+    Point,
+  ];
+
+  return reordered;
+};
+
+/**
+ * Return a quad covering the full image bounds as [TL, TR, BR, BL].
+ *
+ * Used as a fallback when no document region is detected, or when no prior corners exist for the crop UI to initialize from.
+ *
+ * @param width - Natural image width in pixels.
+ * @param height - Natural image height in pixels.
+ * @returns Quad as [TL, TR, BR, BL] in image space coordinates.
+ */
+export const defaultQuad = (
+  width: number,
+  height: number,
+): [Point, Point, Point, Point] => [
+  { x: 0, y: 0 },
+  { x: width, y: 0 },
+  { x: width, y: height },
+  { x: 0, y: height },
+];
+
+/**
  * Convert a raw float mask to an 8-bit binary Mat by thresholding.
  * Values above threshold becomes 255 (foreground); all others become 0.
  *
