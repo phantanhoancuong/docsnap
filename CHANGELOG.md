@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0] - 2026/05/17
+
+### Added
+
+- Rotate any image right from the inspection oveerlay. Rotation is stored per image and shown in the gallery, inspection overlay, and PDF export.
+- Manually adjust crop corners through a full-screen overlay with a draggable SVG quad. On confirm the pipeline re-processed using the provided corners skipping ML inference.
+
 ## [1.0.3] - 2026/05/07
 
 ### Fixed
