@@ -1,6 +1,6 @@
 import * as ort from "onnxruntime-web";
 
-import { ImageFile, Point, ScanMode } from "@/app/types";
+import { ScanMode, QuadCorners } from "@/app/types";
 
 import { getSession } from "@/app/lib/onnx";
 import { loadOpenCV } from "@/app/lib/opencv";
@@ -81,66 +81,76 @@ const runInference = async (
 };
 
 /**
- * Document processing pipeline:
+ * Document processing pipeline.
+ *
+ * If `corners` are provided, skip ML inference and warp directly to those corners.
+ * Otherwise run the full pipeline:
  * 1. Load OpenCV and ONNX session.
  * 2. Run segmentation model to obtain mask.
- * 3. Extract document quad from mask.
+ * 3. Extract document corners from mask, falling back to full image bounds.
  * 4. Apply perspective warp.
  * 5. Enhance output (color or black/white).
  *
- * @param imageFile - Input image file and URL.
- * @param mode - Output mode ("color" or "bw").
- * @returns Processed image file and detected corner points.
+ * @param image - Source image element.
+ * @param mode - Output scan mode ("color" or "bw").
+ * @param mimeType - Output MIME type (e.g. "image/jpeg").
+ * @param fileName - Output file name.
+ * @param corners - Optional pre-determined corners. If provided, ML inference is skipped.
+ * @returns Processed file and the corners used.
  */
 export const processImage = async (
-  imageFile: ImageFile,
   image: HTMLImageElement,
-  mode: ScanMode = "color",
-): Promise<{
-  processedImage: ImageFile;
-  corners: [Point, Point, Point, Point];
-}> => {
-  const cv = await loadOpenCV();
+  mode: ScanMode,
+  mimeType: string,
+  fileName: string,
+  corners?: QuadCorners,
+): Promise<{ processedFile: File; quadCorners: QuadCorners }> => {
+  let quadCorners: QuadCorners;
 
-  const sess = await getSession();
+  if (corners) {
+    quadCorners = corners;
+  } else {
+    const cv = await loadOpenCV();
+    const sess = await getSession();
+    const mask = await runInference(sess, image);
+    quadCorners =
+      (await maskToQuad(cv, mask, image.width, image.height)) ??
+      defaultQuad(image.width, image.height);
+  }
 
-  const mask = await runInference(sess, image);
-
-  const quad: [Point, Point, Point, Point] =
-    (await maskToQuad(cv, mask, image.width, image.height)) ??
-    defaultQuad(image.width, image.height);
-
-  const mimeType = imageFile.file.type || "image/jpeg";
-  const fileName = imageFile.file.name.replace(/(\.[^.]+)?$/, "_scanned$1");
-  const processedImage = await warpAndEncode(
+  const processedFile = await warpAndEncode(
     image,
-    quad,
+    quadCorners,
     mode,
     mimeType,
     fileName,
   );
-
-  return { processedImage, corners: quad };
+  return { processedFile, quadCorners };
 };
 
 /**
- * Warp, enhance, and encode an image region into an `ImageFile`.
+ * Warp, enhance, and encode an image region into a `File`.
  *
  * @param image - Source image element.
- * @param quad - Four corner points defining the document region in image space coordinates.
- * @param mode - Scan mode for constrast enhancement.
+ * @param quadCorners - Document corners in image space coordinates.
+ * @param mode - Scan mode for contrast enhancement.
  * @param mimeType - Output MIME type (e.g. "image/jpeg").
  * @param fileName - Output file name.
- * @returns Processed `ImageFile` with a new blob URL.
+ * @returns Processed `File`.
  */
-export const warpAndEncode = async (
+const warpAndEncode = async (
   image: HTMLImageElement,
-  quad: [Point, Point, Point, Point],
+  quadCorners: QuadCorners,
   mode: ScanMode,
   mimeType: string,
   fileName: string,
-): Promise<ImageFile> => {
-  const warpedCanvas = warpPerspective(image, quad);
+): Promise<File> => {
+  const warpedCanvas = warpPerspective(image, [
+    quadCorners.topLeft,
+    quadCorners.topRight,
+    quadCorners.bottomRight,
+    quadCorners.bottomLeft,
+  ]);
   const enhancedCanvas = enhanceContrast(warpedCanvas, mode);
   const quality = mimeType === "image/jpeg" ? 0.92 : undefined;
 
@@ -152,8 +162,5 @@ export const warpAndEncode = async (
     ),
   );
 
-  return {
-    file: new File([blob], fileName, { type: mimeType }),
-    url: URL.createObjectURL(blob),
-  };
+  return new File([blob], fileName, { type: mimeType });
 };

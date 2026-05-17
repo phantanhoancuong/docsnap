@@ -1,32 +1,25 @@
 "use client";
 
 import Link from "next/link";
-
-import {
-  CropOverlay,
-  ImageGallery,
-  InspectionOverlay,
-} from "@/app/components/client";
-import { Icon } from "@/app/components/server";
-
 import { useState } from "react";
 
 import { useScanner } from "@/app/hooks";
-
 import {
   AlbumIcon,
   CameraIcon,
   DownloadIcon,
   ScanIcon,
 } from "@/app/assets/icons";
-
-import { OverlayState, ScanMode } from "@/app/types";
-
 import {
   CameraView,
+  CropOverlay,
   ExportErrorOverlay,
   FailedImagesOverlay,
+  ImageGallery,
+  InspectionOverlay,
 } from "@/app/components/client";
+import { Icon } from "@/app/components/server";
+import { OverlayState, QuadCorners, ScanMode } from "@/app/types";
 
 const SCAN_MODES: ScanMode[] = ["bw", "color"];
 const SCAN_MODE_LABELS: Record<ScanMode, string> = {
@@ -43,49 +36,60 @@ const SCAN_MODE_LABELS: Record<ScanMode, string> = {
  *    - Explicitly trigger scanning with the scan button.
  *    - Trigger processing and download with the download button.
  *    - Display uploaded images in a sortable gallery.
- *    - Manage all overlay visibility through a union state.
- *  - Support image inspection, retake, and crop from the inspection overlay.
+ *    - Manage all overlay visibility via a single discriminated union state.
+ *    - Support image inspection, retake, and crop from the inspection overlay.
  */
 export default function Home() {
   const scanner = useScanner();
   const [overlay, setOverlay] = useState<OverlayState>({ type: "none" });
 
   /**
-   * Navigate to the image at the given 0-based index and update the inspection overlay.
+   * Navigate to an image by id and open the inspection overlay.
+   * Computes imageIndex from the current imageIds order.
    *
-   * @param index - 0-based index into `scanner.imageKeys`.
+   * @param imageId - The id of the image to inspect.
    */
-  const navigateToImage = (index: number): void => {
-    const imageKey = scanner.imageKeys[index];
-    const entry = scanner.images.get(imageKey);
-    if (!entry) return;
+  const navigateToId = (imageId: string): void => {
+    const index = scanner.imageIds.indexOf(imageId);
+    if (index === -1) return;
+    setOverlay({ type: "inspection", imageId, imageIndex: index + 1 });
+  };
+
+  /**
+   * Navigate to the image at the given 0-based index and open the inspection overlay.
+   *
+   * @param index - 0-based index into `scanner.imageIds`.
+   */
+  const navigateToIndex = (index: number): void => {
+    const imageId = scanner.imageIds[index];
+    if (!imageId) return;
     setOverlay({
       type: "inspection",
-      imageKey,
-      imageUrl: entry.originalImage.url,
-      scannedUrl: entry.processedImage?.url ?? null,
+      imageId: scanner.imageIds[index],
       imageIndex: index + 1,
-      corners: entry.corners ?? null,
     });
   };
 
   /** Navigate to the previous image in the gallery. */
   const getPreviousImage = (): void => {
     if (overlay.type !== "inspection" || overlay.imageIndex === 1) return;
-    navigateToImage(overlay.imageIndex - 2);
+    navigateToIndex(overlay.imageIndex - 2);
   };
 
   /** Navigate to the next image in the gallery. */
   const getNextImage = (): void => {
     if (
       overlay.type !== "inspection" ||
-      overlay.imageIndex === scanner.imageKeys.length
+      overlay.imageIndex === scanner.imageIds.length
     )
       return;
-    navigateToImage(overlay.imageIndex);
+    navigateToIndex(overlay.imageIndex);
   };
 
-  /** Initiate PDF export, or show the failed images overlay if any images failed. Prevent exporting a PDF with missing pages. */
+  /**
+   * Initiate PDF export, or show the failed images overlay if any images failed.
+   * Prevents exporting a PDF with missing pages.
+   */
   const handleDownload = (): void => {
     if (scanner.failedCount > 0) {
       setOverlay({ type: "failedImages" });
@@ -97,12 +101,20 @@ export default function Home() {
   /** Open the crop overlay for the currently inspected image. */
   const handleCrop = (): void => {
     if (overlay.type !== "inspection") return;
-    setOverlay({
-      type: "crop",
-      imageKey: overlay.imageKey,
-      imageUrl: overlay.imageUrl,
-      corners: overlay.corners,
-    });
+    setOverlay({ type: "crop", imageId: overlay.imageId });
+  };
+
+  /** Apply crop corners and return to inspection. */
+  const handleCropConfirm = (corners: QuadCorners): void => {
+    if (overlay.type !== "crop") return;
+    scanner.cropImage(overlay.imageId, corners);
+    navigateToId(overlay.imageId);
+  };
+
+  /** Rotate the currently inspected image left. */
+  const handleRotateRight = (): void => {
+    if (overlay.type !== "inspection") return;
+    scanner.rotateRightImage(overlay.imageId);
   };
 
   /**
@@ -117,34 +129,24 @@ export default function Home() {
 
     if (overlay.mode === "capture") {
       scanner.insertImages(files);
-      setOverlay({ type: "none" });
       return;
     }
 
     const [file] = files;
-    const result = scanner.retakeImage(overlay.imageKey, file);
+    const result = scanner.replaceImage(overlay.imageId, file);
     if (!result) return;
 
     setOverlay({
       type: "inspection",
-      imageKey: result.newImageKey,
-      imageUrl: result.blobUrl,
-      scannedUrl: null,
-      imageIndex: overlay.imageIndex,
-      corners: null,
+      imageId: result.id,
+      imageIndex: result.imageIndex + 1,
     });
   };
 
   /** Open the camera in retake mode for the currently inspected image. */
   const handleRetake = (): void => {
     if (overlay.type !== "inspection") return;
-    setOverlay({
-      type: "camera",
-      mode: "retake",
-      imageKey: overlay.imageKey,
-      imageIndex: overlay.imageIndex,
-      corners: overlay.corners,
-    });
+    setOverlay({ type: "camera", mode: "retake", imageId: overlay.imageId });
   };
 
   return (
@@ -255,22 +257,13 @@ export default function Home() {
           </div>
 
           <ImageGallery
-            imageKeys={scanner.imageKeys}
-            images={scanner.images}
+            imageIds={scanner.imageIds}
+            imagesById={scanner.imagesById}
             onRetry={scanner.retryImage}
             onRemove={scanner.removeImage}
             onReorder={scanner.reorderImages}
             isProcessing={scanner.isProcessing}
-            onSelect={(imageKey, activeUrl, scannedUrl) => {
-              setOverlay({
-                type: "inspection",
-                imageKey,
-                imageUrl: activeUrl,
-                scannedUrl,
-                imageIndex: scanner.imageKeys.indexOf(imageKey) + 1,
-                corners: scanner.images.get(imageKey)?.corners ?? null,
-              });
-            }}
+            onSelect={navigateToId}
           />
         </div>
       </main>
@@ -300,29 +293,43 @@ export default function Home() {
       )}
 
       {/* Crop overlay */}
-      {overlay.type === "crop" && (
-        <CropOverlay
-          onClose={() => setOverlay({ type: "none" })}
-          onConfirm={() => {}}
-          imageUrl={overlay.imageUrl}
-          corners={overlay.corners}
-        />
-      )}
+      {overlay.type === "crop" &&
+        (() => {
+          const documentImage = scanner.imagesById.get(overlay.imageId);
+          if (!documentImage) return null;
+          return (
+            <CropOverlay
+              imageUrl={documentImage.original.url}
+              quadCorners={documentImage.corners ?? null}
+              rotationStep={documentImage.rotationStep}
+              onConfirm={handleCropConfirm}
+              onClose={() => navigateToId(overlay.imageId)}
+            />
+          );
+        })()}
 
       {/* Inspection overlay */}
-      {overlay.type === "inspection" && (
-        <InspectionOverlay
-          onClose={() => setOverlay({ type: "none" })}
-          activeImageUrl={overlay.imageUrl}
-          scannedImageUrl={overlay.scannedUrl}
-          activeIndex={overlay.imageIndex}
-          totalImages={scanner.imageKeys.length}
-          getPreviousImage={getPreviousImage}
-          getNextImage={getNextImage}
-          retakeImage={handleRetake}
-          cropImage={handleCrop}
-        />
-      )}
+      {overlay.type === "inspection" &&
+        (() => {
+          const documentImage = scanner.imagesById.get(overlay.imageId);
+          if (!documentImage) return null;
+          return (
+            <InspectionOverlay
+              activeIndex={overlay.imageIndex}
+              totalImages={scanner.imageIds.length}
+              rotationStep={documentImage.rotationStep}
+              activeImageUrl={documentImage.original.url}
+              scannedImageUrl={documentImage.processed?.url ?? null}
+              getPreviousImage={getPreviousImage}
+              getNextImage={getNextImage}
+              retakeImage={handleRetake}
+              cropImage={handleCrop}
+              rotateRightImage={handleRotateRight}
+              onClose={() => setOverlay({ type: "none" })}
+            />
+          );
+        })()}
+
       <footer className="text-xs text-gray-400 text-center pb-4">
         app version: {process.env.NEXT_PUBLIC_VERSION}
       </footer>

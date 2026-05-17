@@ -4,7 +4,7 @@ import {
   uploadTexture,
 } from "@/app/lib/pipeline/webgl";
 
-import { Point } from "@/app/types";
+import { Point, QuadPoints } from "@/app/types";
 
 const VERT_SRC = `
   attribute vec2 a_pos;
@@ -50,8 +50,8 @@ const FRAG_SRC = `
  * @returns 9-element Float64Array [h0 through h8] where h8 is always 1.
  */
 const solveHomography = (
-  srcCorners: [Point, Point, Point, Point],
-  dstCorners: [Point, Point, Point, Point],
+  srcCorners: QuadPoints,
+  dstCorners: QuadPoints,
 ): Float64Array => {
   const equations: number[][] = [];
 
@@ -278,7 +278,7 @@ export const warpPerspectiveCPU = (
  */
 export const warpPerspective = (
   image: HTMLImageElement,
-  quad: [Point, Point, Point, Point],
+  quad: QuadPoints,
 ): HTMLCanvasElement => {
   const { width: outW, height: outH } = computeOutputSize(
     quad,

@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Icon } from "@/app/components/server";
+
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
   CloseIcon,
   CropIcon,
   RetakePhotoIcon,
-  RotateLeftIcon,
+  RotateRightIcon,
 } from "@/app/assets/icons";
+import { Icon } from "@/app/components/server";
 
 /**
  * Full-screen overlay for inspecting and editing scanned images.
@@ -29,25 +30,29 @@ import {
  * @param getNextImage - Navigate to the next image.
  */
 const InspectionOverlay = ({
-  onClose,
-  activeImageUrl,
-  scannedImageUrl,
   activeIndex,
   totalImages,
+  rotationStep,
+  activeImageUrl,
+  scannedImageUrl,
   getPreviousImage,
   getNextImage,
-  retakeImage,
   cropImage,
+  retakeImage,
+  rotateRightImage,
+  onClose,
 }: {
-  onClose: () => void;
-  activeImageUrl: string;
-  scannedImageUrl: string | null;
   activeIndex: number;
   totalImages: number;
+  rotationStep: number;
+  activeImageUrl: string;
+  scannedImageUrl: string | null;
   getPreviousImage: () => void;
   getNextImage: () => void;
-  retakeImage: () => void;
   cropImage: () => void;
+  retakeImage: () => void;
+  rotateRightImage: () => void;
+  onClose: () => void;
 }) => {
   const touchStartX = useRef<number>(0);
 
@@ -112,6 +117,9 @@ const InspectionOverlay = ({
         <img
           src={imageUrl}
           className="max-h-full max-w-full object-contain mx-auto"
+          style={{
+            transform: `rotate(${(rotationStep * 90) % 360}deg)`,
+          }}
         />
       </div>
 
@@ -153,9 +161,14 @@ const InspectionOverlay = ({
           <Icon src={RetakePhotoIcon} className="size-6" />
           <p className="text-xs">Retake</p>
         </button>
-        <button className="flex flex-col gap-1 items-center cursor-pointer py-1">
-          <Icon src={RotateLeftIcon} className="size-6" />
-          <p className="text-xs">WIP</p>
+        <button
+          className="flex flex-col gap-1 items-center cursor-pointer py-1"
+          onClick={() => {
+            rotateRightImage();
+          }}
+        >
+          <Icon src={RotateRightIcon} className="size-6" />
+          <p className="text-xs">Rotate</p>
         </button>
         <button
           className="flex flex-col gap-1 items-center cursor-pointer py-1"

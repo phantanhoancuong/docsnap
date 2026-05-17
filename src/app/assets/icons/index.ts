@@ -11,4 +11,5 @@ export { default as FlashOnIcon } from "./flash_on_24dp_FFFFFF_FILL0_wght400_GRA
 export { default as HourglassIcon } from "./hourglass_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg";
 export { default as RetakePhotoIcon } from "./flip_camera_ios_24dp_FFFFFF_FILL1_wght400_GRAD0_opsz24.svg";
 export { default as RotateLeftIcon } from "./rotate_left_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg";
+export { default as RotateRightIcon } from "./rotate_right_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg";
 export { default as ScanIcon } from "./scan_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg";
