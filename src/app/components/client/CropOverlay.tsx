@@ -31,6 +31,11 @@ const cornersToPoints = (c: QuadCorners): QuadPoints => [
  * Internally uses `QuadPoints` (unordered tuple) during drag to keep corner indices stable.
  * Sorts into `QuadCorners` (ordered object) for rendering and on confirm.
  *
+ * On desktop, pointer events handle drag with pointer capture.
+ * On mobile, touch events are used instead — React's onTouchMove is passive by default so
+ * preventDefault() has no effect. A non-passive touchmove listener is added via useEffect
+ * to prevent the browser from intercepting the drag with scroll or URL bar toggling.
+ *
  * @param imageUrl - Original image URL.
  * @param quadCorners - Initial corners in original image space, or `null` to default to full image bounds.
  * @param rotationStep - Current rotation in 90° steps. Applied as CSS and used for coordinate conversion.
@@ -50,6 +55,7 @@ const CropOverlay = ({
   onConfirm: (corners: QuadCorners) => void;
   onClose: () => void;
 }) => {
+  const overlayRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const draggingIndex = useRef<number | null>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -206,7 +212,7 @@ const CropOverlay = ({
   );
 
   /**
-   * Begin dragging a corner.
+   * Begin dragging a corner (desktop).
    *
    * Reading index from data-index avoids creating a new handler closure per corner.
    * Pointer capture keeps the drag alive even if the pointer leaves the circle.
@@ -219,26 +225,39 @@ const CropOverlay = ({
   }, []);
 
   /**
-   * Move the active corner to the pointer's current position.
+   * Move the active corner to the pointer's current position (desktop).
    *
    * Functional updater avoids closing over `quadPoints` so it's not in the dependency array.
-   *
-   * The hanler only recreates when `screenPointToImagePoint` changes, not on every drag tick.
+   * The handler only recreates when `screenPointToImagePoint` changes, not on every drag tick.
    */
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
-      if (draggingIndex.current === null || !quadPoints) return;
+      if (draggingIndex.current === null) return;
       const newPoint = screenPointToImagePoint({ x: e.clientX, y: e.clientY });
-      const updatedQuadPoints: QuadPoints = [...quadPoints];
-      updatedQuadPoints[draggingIndex.current] = newPoint;
-      setQuadPoints(updatedQuadPoints);
+      setQuadPoints((prev) => {
+        if (!prev) return prev;
+        const updated: QuadPoints = [...prev];
+        updated[draggingIndex.current!] = newPoint;
+        return updated;
+      });
     },
-    [quadPoints, screenPointToImagePoint],
+    [screenPointToImagePoint],
   );
 
-  /** Release the active drag. */
+  /** Release the active drag (desktop). */
   const handlePointerUp = useCallback(() => {
     draggingIndex.current = null;
+  }, []);
+
+  /**
+   * Begin dragging a corner.
+   *
+   * Called on the circle element that reads index from data-index.
+   */
+  const handleTouchStart = useCallback((e: React.TouchEvent<SVGElement>) => {
+    e.preventDefault();
+    const index = Number((e.currentTarget as SVGElement).dataset.index);
+    draggingIndex.current = index;
   }, []);
 
   /**
@@ -263,8 +282,7 @@ const CropOverlay = ({
     onConfirm(sortQuad(unrotated));
   }, [quadPoints, rotationStep, onConfirm]);
 
-  // Sort for rendering to keep polygon convex. Memoized so it only reruns when quadPoints changes.
-  // Sorted for rendering to keep the polygon convex. Not used ofr circles because
+  // Sort for rendering to keep polygon convex. Memoized so it only reruns when `quadPoints` changes.
   const sortedQuadCorners = useMemo(
     () => (quadPoints ? sortQuad(quadPoints) : null),
     [quadPoints],
@@ -282,8 +300,45 @@ const CropOverlay = ({
     };
   }, [sortedQuadCorners, imagePointToScreenPoint]);
 
+  // Lock `scroll` and block `touchmove` to prevent the browser URL bar from toggling on mobile.
+  // Non-passive listener is attached here because React's `onTouchMove` is passive by default so `preventDefault()` has no effect.
+  // `touchend` is also handled here to release the drag cleanly.
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    const element = overlayRef.current;
+
+    const onTouchMove = (event: TouchEvent) => {
+      event.preventDefault();
+      if (draggingIndex.current === null) return;
+      const touch = event.touches[0];
+      const newPoint = screenPointToImagePoint({
+        x: touch.clientX,
+        y: touch.clientY,
+      });
+      setQuadPoints((prev) => {
+        if (!prev) return prev;
+        const updated: QuadPoints = [...prev];
+        updated[draggingIndex.current!] = newPoint;
+        return updated;
+      });
+    };
+
+    const onTouchEnd = () => {
+      draggingIndex.current = null;
+    };
+
+    element?.addEventListener("touchmove", onTouchMove, { passive: false });
+    element?.addEventListener("touchend", onTouchEnd);
+    return () => {
+      document.body.style.overflow = "";
+      element?.removeEventListener("touchmove", onTouchMove);
+      element?.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [screenPointToImagePoint]);
+
   return (
     <div
+      ref={overlayRef}
       className="flex flex-col fixed inset-x-0 top-0 z-50 bg-background gap-4 overflow-hidden"
       style={{ height: "100dvh" }}
       onPointerMove={handlePointerMove}
@@ -296,7 +351,7 @@ const CropOverlay = ({
         </button>
       </div>
 
-      {/* Original image with quad overlay */}
+      {/* Image in square container — prevents layout shift during rotation */}
       <div className="flex flex-1 min-h-0 items-center justify-center px-4">
         <div
           ref={containerRef}
@@ -330,7 +385,7 @@ const CropOverlay = ({
                 className="pointer-events-none"
               />
 
-              {/* Corner circles */}
+              {/* Corner circles — uses unsorted quadPoints so indices match drag state */}
               {quadPoints?.map((point, index) => {
                 const screenPoint = imagePointToScreenPoint(point);
                 return (
@@ -345,6 +400,7 @@ const CropOverlay = ({
                     strokeWidth={QUAD_STROKE_WIDTH}
                     className="cursor-grab active:cursor-grabbing touch-none"
                     onPointerDown={handlePointerDown}
+                    onTouchStart={handleTouchStart}
                   />
                 );
               })}

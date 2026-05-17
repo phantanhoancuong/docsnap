@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.1]
+
+- Corner dragging in `CropOverlay` now works correctly on mobile. React's `onTouchMovre` is passive by default so `preventDefault()` had no effect, causing the browser to intercept touch events with scroll and URL bar toggling. This was fixed by attaching a non passive `touchmove` listener through. This is applied to both `CropOverlay` and `InspectionOverlay`.
+
 ## [1.1.0] - 2026/05/17
 
 ### Added
