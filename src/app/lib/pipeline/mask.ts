@@ -1,4 +1,4 @@
-import { CVMat, CVMatVector, OpenCV, Point } from "@/app/types";
+import { CVMat, CVMatVector, OpenCV, Point, QuadCorners } from "@/app/types";
 
 import {
   INPUT_SIZE,
@@ -6,6 +6,62 @@ import {
   MINIMUM_AREA,
   PIXEL_NUMBER,
 } from "@/app/lib/pipeline/constants";
+
+/**
+ * Sort 4 points into TL/TR/BR/BL order by angle from the centroid.
+ *
+ * Called for rendering and on confirm, but NOT during drag. Sorting mid-drag would reassign array indices and cause the corners to jump.
+ *
+ * @param points - Four corner points in any order.
+ * @returns Corners sorted as `QuadCorners`.
+ */
+export const sortQuad = (points: [Point, Point, Point, Point]): QuadCorners => {
+  const cx = points.reduce((sum, point) => sum + point.x, 0) / 4;
+  const cy = points.reduce((sum, point) => sum + point.y, 0) / 4;
+
+  const sortedPoints = [...points].sort((a, b) => {
+    const angleA = Math.atan2(a.y - cy, a.x - cx);
+    const angleB = Math.atan2(b.y - cy, b.x - cx);
+
+    return angleA - angleB;
+  });
+
+  const topLeftIndex = sortedPoints.reduce(
+    (bestIndex, point, index) =>
+      point.x + point.y < sortedPoints[bestIndex].x + sortedPoints[bestIndex].y
+        ? index
+        : bestIndex,
+    0,
+  );
+
+  const orderedPoints = [
+    ...sortedPoints.slice(topLeftIndex),
+    ...sortedPoints.slice(0, topLeftIndex),
+  ];
+
+  return {
+    topLeft: orderedPoints[0],
+    topRight: orderedPoints[1],
+    bottomRight: orderedPoints[2],
+    bottomLeft: orderedPoints[3],
+  };
+};
+
+/**
+ * Return a `QuadCorners` covering the full image bounds.
+ *
+ * Used as a fallback when no document region is detected, or when no prior corners exist for the crop UI to initialize from.
+ *
+ * @param width - Natural image width in pixels.
+ * @param height - Natural image height in pixels.
+ * @returns `QuadCorners` in image space coordinates.
+ */
+export const defaultQuad = (width: number, height: number): QuadCorners => ({
+  topLeft: { x: 0, y: 0 },
+  topRight: { x: width, y: 0 },
+  bottomRight: { x: width, y: height },
+  bottomLeft: { x: 0, y: height },
+});
 
 /**
  * Convert a raw float mask to an 8-bit binary Mat by thresholding.
@@ -127,48 +183,48 @@ const contourToHullPoints = (cv: OpenCV, contour: CVMat): Point[] => {
  * @param hullPoints - Convex hull vertices in `INPUT_SIZE` coordinate space.
  * @returns Four corners in TL, TR, BR, BL order, or null if fewer than four hull points exist.
  */
-const hullPointsToQuad = (
-  hullPoints: Point[],
-): [Point, Point, Point, Point] | null => {
+const hullPointsToQuad = (hullPoints: Point[]): QuadCorners | null => {
   if (hullPoints.length < 4) return null;
-
-  const corners = [
+  const targets = [
     { x: 0, y: 0 },
     { x: INPUT_SIZE, y: 0 },
     { x: INPUT_SIZE, y: INPUT_SIZE },
     { x: 0, y: INPUT_SIZE },
   ];
 
-  return corners.map((c) =>
+  const [topLeft, topRight, bottomRight, bottomLeft] = targets.map((c) =>
     hullPoints.reduce((best, p) =>
       (p.x - c.x) ** 2 + (p.y - c.y) ** 2 <
       (best.x - c.x) ** 2 + (best.y - c.y) ** 2
         ? p
         : best,
     ),
-  ) as [Point, Point, Point, Point];
+  );
+
+  return { topLeft, topRight, bottomRight, bottomLeft };
 };
 
 /**
- * Scale a quad from `INPUT_SIZE` coordinate space back to the original image dimensions.
+ * Scale a `QuadCorners` from `INPUT_SIZE` coordinate space back to the original image dimensions.
  *
- * @param quad - Four corner points in `INPUT_SIZE` space.
+ * @param quad - `QuadCorners` in `INPUT_SIZE` space.
  * @param imageWidth - Original image width in pixels.
  * @param imageHeight - Original image height in pixels.
- * @returns The same four corners remapped to image-space coordinates.
+ * @returns The same corners remapped to image-space coordinates.
  */
 const scaleQuad = (
-  quad: [Point, Point, Point, Point],
+  quad: QuadCorners,
   imageWidth: number,
   imageHeight: number,
-): [Point, Point, Point, Point] => {
+): QuadCorners => {
   const sx = imageWidth / INPUT_SIZE;
   const sy = imageHeight / INPUT_SIZE;
-
-  return quad.map(({ x, y }) => ({
-    x: x * sx,
-    y: y * sy,
-  })) as [Point, Point, Point, Point];
+  return {
+    topLeft: { x: quad.topLeft.x * sx, y: quad.topLeft.y * sy },
+    topRight: { x: quad.topRight.x * sx, y: quad.topRight.y * sy },
+    bottomRight: { x: quad.bottomRight.x * sx, y: quad.bottomRight.y * sy },
+    bottomLeft: { x: quad.bottomLeft.x * sx, y: quad.bottomLeft.y * sy },
+  };
 };
 
 /**
@@ -188,14 +244,14 @@ const scaleQuad = (
  * @param mask - Float32Array of length `PIXEL_NUMBER` (`INPUT_SIZE` squared), values in range 0 to 1.
  * @param imageWidth - Width of the original image in pixels.
  * @param imageHeight - Height of the original image in pixels.
- * @returns Four corner points in TL, TR, BR, BL order in image-space pixel coordinates, or null if no document region could be detected.
+ * @returns `QuadCorners` in TL/TR/BR/BL order in image-space pixel coordinates, or `null` if no document region could be detected.
  */
 export const maskToQuad = async (
   cv: OpenCV,
   mask: Float32Array,
   imageWidth: number,
   imageHeight: number,
-): Promise<[Point, Point, Point, Point] | null> => {
+): Promise<QuadCorners | null> => {
   let binary: CVMat | null = null;
   let closed: CVMat | null = null;
   let contours: CVMatVector | null = null;

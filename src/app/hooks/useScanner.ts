@@ -1,12 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { arrayMove } from "@dnd-kit/sortable";
 import { jsPDF } from "jspdf";
 import { v4 as uuidv4 } from "uuid";
 
-import { ImageEntry, ImageFile, ScanMode } from "@/app/types/image";
+import {
+  DocumentImage,
+  ImageAsset,
+  QuadCorners,
+  ScanMode,
+} from "@/app/types/image";
 
 import { processImage } from "@/app/lib/pipeline";
 
@@ -18,23 +23,28 @@ import { useLatest, useProcessingQueue } from "@/app/hooks";
  * Behavior:
  *    - Manage the image list, scan mode, processing pipeline, and PDF export.
  *    - Own and revoke all blob URLs created during the session.
- *    - Processing is delegated to `useProcessingQueue` which handles sequential processing, deduplication by `imageKey`,
- * and automatic re-processing when scan mode changes mid-flight.
- *    - Processing is triggered with `scanImages()` or `downloadPDF()`.
- *    - Switching scan mode while processing re-enqueues all images images under the new mode. Switching while idle just updates the mode.
+ *    - Processing is delegated to `useProcessingQueue` which handles sequential processing,
+ *      deduplication by `id`, and automatic re-processing when scan mode changes mid-flight.
+ *    - Images are enqueued automatically on insert.
+ *    - Switching scan mode while idle re-enqueues all stale images via `scanImages`.
  *
  * @returns Scanner state and controls.
  */
 export const useScanner = () => {
-  const [imageKeys, setImageKeys] = useState<string[]>([]);
-  const [images, setImages] = useState<Map<string, ImageEntry>>(new Map());
+  const [imageIds, setImageIds] = useState<string[]>([]);
+  const [imagesById, setImagesById] = useState<Map<string, DocumentImage>>(
+    new Map(),
+  );
+  const imagesByIdRef = useLatest(imagesById);
+  const imageIdsRef = useLatest(imageIds);
+
   const [scanMode, setScanMode] = useState<ScanMode>("bw");
   const [exportError, setExportError] = useState<string | null>(null);
 
   // Track blob URLs so we can revoke on unmount.
   const blobUrlsRef = useRef<Set<string>>(new Set());
 
-  // Revoke blob URLs when unmounting.
+  // Revoke all tracked blob URLs when unmounting.
   useEffect(() => {
     return () => {
       blobUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
@@ -45,7 +55,7 @@ export const useScanner = () => {
   /**
    * Load an image from a URL into an `HTMLImageElement`.
    *
-   * @param url - The URL to load the image from.
+   * @param url - The URL to load.
    * @returns A promise resolving to the loaded `HTMLImageElement`.
    * @throws If the image fails to load.
    */
@@ -58,129 +68,211 @@ export const useScanner = () => {
     });
 
   /**
+   * Create a blob URL for a file and register it to `blobUrlsRef`.
+   *
+   * @param file - The file to create a blob URL for.
+   * @returns The blob URL.
+   */
+  const createBlobUrl = (file: File): string => {
+    const url = URL.createObjectURL(file);
+    blobUrlsRef.current.add(url);
+    return url;
+  };
+
+  /**
+   * Create a new `DocumentImage` entry for a file, registering its blob URL.
+   *
+   * @param file - The image file to create an entry for.
+   * @returns A new `DocumentImage` with `status: "notProcessed"`.
+   */
+  const createDocumentImage = (file: File): DocumentImage => ({
+    status: "notProcessed",
+    id: uuidv4(),
+    scanMode,
+    rotationStep: 0,
+    original: { file, url: createBlobUrl(file) },
+  });
+
+  /**
+   * Revoke all blob URLs for an image entry and remove them from tracking.
+   *
+   * @param entry - The entry whose URLs should be revoked.
+   */
+  const revokeImageUrls = (entry: DocumentImage): void => {
+    URL.revokeObjectURL(entry.original.url);
+    blobUrlsRef.current.delete(entry.original.url);
+    if (entry.processed) {
+      URL.revokeObjectURL(entry.processed.url);
+      blobUrlsRef.current.delete(entry.processed.url);
+    }
+  };
+
+  /**
    * Process a single image entry through the ML pipeline.
+   *
+   * If the entry has `corners` set, ML inference is skipped and those corners
+   * are used directly for warping (crop path). Otherwise the full pipeline runs.
    *
    * Behavior:
    *    - Mark the entry as `processing` before the run.
-   *    - On success update it to `processed` with the result.
+   *    - On success update it to `processed` with the result and corners.
    *    - On failure mark it as `failed` with the error message.
    *
    * @param entry - The image entry to process.
-   * @returns A promise resolving to the processed `ImageFile`.
-   * @throws If `processImage` fails, after marking the entry as `failed`.
+   * @returns A promise resolving to the processed `ImageAsset`.
+   * @throws If `processImage()` fails, after marking the entry as `failed`.
    */
-  const processor = async (entry: ImageEntry): Promise<ImageFile> => {
-    const { imageKey, scanMode: entryScanMode } = entry;
-
-    setImages((prev) => {
+  const processor = async (entry: DocumentImage): Promise<ImageAsset> => {
+    setImagesById((prev) => {
       const updated = new Map(prev);
-      updated.set(imageKey, {
-        ...updated.get(imageKey)!,
-        processPhase: "processing",
-        errorMessage: undefined,
+      updated.set(entry.id, {
+        ...updated.get(entry.id)!,
+        status: "processing",
+        error: undefined,
       });
       return updated;
     });
 
     try {
-      const originalImage =
-        imagesRef.current.get(imageKey)?.originalImage ?? entry.originalImage;
-      const image = await loadImage(originalImage.url);
-      const result = await processImage(originalImage, image, entryScanMode);
+      const original =
+        imagesByIdRef.current.get(entry.id)?.original ?? entry.original;
+      const imageElement = await loadImage(original.url);
+      const mimeType = original.file.type || "image/jpeg";
+      const fileName = original.file.name.replace(/(\.[^.]+)?$/, "_scanned$1");
 
-      setImages((prev) => {
+      const { processedFile, quadCorners } = await processImage(
+        imageElement,
+        entry.scanMode,
+        mimeType,
+        fileName,
+        entry.corners,
+      );
+
+      const processed: ImageAsset = {
+        file: processedFile,
+        url: createBlobUrl(processedFile),
+      };
+
+      setImagesById((prev) => {
         const updated = new Map(prev);
-        updated.set(imageKey, {
-          ...updated.get(imageKey)!,
-          processedImage: result.processedImage,
-          processPhase: "processed",
-          scanMode: entryScanMode,
-          errorMessage: undefined,
+        updated.set(entry.id, {
+          ...updated.get(entry.id)!,
+          status: "processed",
+          processed,
+          corners: quadCorners,
+          scanMode: entry.scanMode,
+          error: undefined,
         });
         return updated;
       });
 
-      return result.processedImage;
-    } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : "Processing failed";
+      return processed;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Processing failed";
 
-      setImages((prev) => {
+      setImagesById((prev) => {
         const updated = new Map(prev);
-        updated.set(imageKey, {
-          ...updated.get(imageKey)!,
-          processPhase: "failed",
-          errorMessage,
+        updated.set(entry.id, {
+          ...updated.get(entry.id)!,
+          status: "failed",
+          error: errorMessage,
         });
         return updated;
       });
 
-      throw e;
+      throw error;
     }
   };
 
   const { enqueue, cancel, isProcessing } = useProcessingQueue<
-    ImageEntry,
-    ImageFile
+    DocumentImage,
+    ImageAsset
   >({ processor });
-
-  const imagesRef = useLatest(images);
-  const imageKeysRef = useLatest(imageKeys);
 
   /**
    * Return entries that need processing in the current display order.
-   *
-   * Include entries that are `notProcessed`, `failed` or processed under a different scan mode than `targetScanMode`.
+   * Includes entries that are `notProcessed`, `failed`, or processed under a different scan mode.
    *
    * @param targetScanMode - The scan mode to check staleness against.
-   * @returns Array of stale or unprocessed `ImageEntry` in display order.
+   * @returns Array of stale or unprocessed `DocumentImage` in display order.
    */
-  const getStaleEntries = (targetScanMode: ScanMode): ImageEntry[] =>
-    imageKeysRef.current
-      .map((key) => imagesRef.current.get(key)!)
+  const getStaleEntries = (targetScanMode: ScanMode): DocumentImage[] =>
+    imageIdsRef.current
+      .map((id) => imagesByIdRef.current.get(id)!)
       .filter(
         (entry) =>
           entry &&
-          (entry.processPhase === "notProcessed" ||
-            entry.processPhase === "failed" ||
-            (entry.processPhase === "processed" &&
+          (entry.status === "notProcessed" ||
+            entry.status === "failed" ||
+            (entry.status === "processed" &&
               entry.scanMode !== targetScanMode)),
       );
 
   /**
-   * Insert images from a file list.
+   * Insert images from a file list and enqueue them for processing.
    *
-   * Behavior:
-   *    - Create a blob URL for each image and add them to the image list with `processPhase` set to `notProcessed`.
-   *
-   * @param files - The file list of images to be inserted.
+   * @param files - The image files to insert.
    */
   const insertImages = (files: File[]): void => {
-    const newImageKeys: string[] = [];
-    const newImageEntries: [string, ImageEntry][] = Array.from(files).map(
-      (file) => {
-        const imageKey = uuidv4();
-        const blobUrl = URL.createObjectURL(file);
-        blobUrlsRef.current.add(blobUrl);
-        newImageKeys.push(imageKey);
-        return [
-          imageKey,
-          {
-            processPhase: "notProcessed",
-            scanMode,
-            imageKey,
-            originalName: file.name,
-            originalImage: { file, url: blobUrl },
-          },
-        ];
-      },
-    );
+    const newEntries = Array.from(files).map(createDocumentImage);
 
-    setImageKeys((prev) => [...prev, ...newImageKeys]);
-    setImages((prev) => {
+    setImageIds((prev) => [...prev, ...newEntries.map((e) => e.id)]);
+    setImagesById((prev) => {
       const updated = new Map(prev);
-      newImageEntries.forEach(([key, entry]) => updated.set(key, entry));
+      newEntries.forEach((entry) => updated.set(entry.id, entry));
       return updated;
     });
+
+    newEntries.forEach(enqueue);
+  };
+
+  /**
+   * Replace an existing image in-place with a new one, preserving its position in the list.
+   *
+   * Behavior:
+   *    - Cancel any pending or in-flight processing for the old image.
+   *    - Revoke the old image's blob URLs.
+   *    - Insert the new image at the same index and enqueue it for processing.
+   *
+   * @param oldId - The id of the image to replace.
+   * @param file - The new image file.
+   * @returns The new id and original URL, or `null` if `oldId` was not found.
+   */
+  const replaceImage = (
+    oldId: string,
+    file: File,
+  ): { id: string; originalUrl: string; imageIndex: number } | null => {
+    const index = imageIdsRef.current.indexOf(oldId);
+    if (index === -1) return null;
+
+    cancel(oldId);
+
+    const oldEntry = imagesByIdRef.current.get(oldId);
+    if (oldEntry) revokeImageUrls(oldEntry);
+
+    const newEntry = createDocumentImage(file);
+
+    setImageIds((prev) => {
+      const updated = [...prev];
+      updated[index] = newEntry.id;
+      return updated;
+    });
+
+    setImagesById((prev) => {
+      const updated = new Map(prev);
+      updated.delete(oldId);
+      updated.set(newEntry.id, newEntry);
+      return updated;
+    });
+
+    enqueue(newEntry);
+
+    return {
+      id: newEntry.id,
+      originalUrl: newEntry.original.url,
+      imageIndex: index,
+    };
   };
 
   /**
@@ -195,174 +287,228 @@ export const useScanner = () => {
 
   /**
    * Re-enqueue a single failed image for processing under the current scan mode.
+   * Resets status to `notProcessed` so the UI reflects the pending retry immediately.
    *
-   * Reset the entry phase to `notProcessed` before enqueuing so the UI immediately shows that the retry is pending.
-   *
-   * @param imageKey - The key of the failed image to retry.
+   * @param id - The id of the failed image to retry.
    */
-  const retryImage = useCallback(
-    (imageKey: string): void => {
-      const entry = imagesRef.current.get(imageKey);
-      if (!entry || entry.processPhase !== "failed") return;
+  const retryImage = (id: string): void => {
+    const entry = imagesByIdRef.current.get(id);
+    if (!entry || entry.status !== "failed") return;
 
-      setImages((prev) => {
-        const updated = new Map(prev);
-        updated.set(imageKey, {
-          ...updated.get(imageKey)!,
-          processPhase: "notProcessed",
-          errorMessage: undefined,
-        });
-        return updated;
+    setImagesById((prev) => {
+      const updated = new Map(prev);
+      updated.set(id, {
+        ...updated.get(id)!,
+        status: "notProcessed",
+        error: undefined,
       });
+      return updated;
+    });
 
-      enqueue({ ...entry, scanMode });
-    },
-    [enqueue, scanMode, imagesRef],
-  );
+    enqueue(entry);
+  };
 
   /**
-   * Remove an image.
+   * Remove an image, cancelling any pending processing and revoking its blob URLs.
    *
-   * Behavior:
-   *    - Remove the image from the image list.
-   *    - Cancel any pending or in-flight processing.
-   *    - Revoke its blob URLs.
-   *
-   * @param imageKey - The key of the image to remove.
+   * @param id - The id of the image to remove.
    */
-  const removeImage = useCallback(
-    (imageKey: string): void => {
-      cancel(imageKey);
+  const removeImage = (id: string): void => {
+    cancel(id);
 
-      const entry = imagesRef.current.get(imageKey);
-      if (entry) {
-        URL.revokeObjectURL(entry.originalImage.url);
-        blobUrlsRef.current.delete(entry.originalImage.url);
-        if (entry.processedImage) {
-          URL.revokeObjectURL(entry.processedImage.url);
-        }
-      }
+    const entry = imagesByIdRef.current.get(id);
+    if (entry) revokeImageUrls(entry);
 
-      setImageKeys((prev) => prev.filter((key) => key !== imageKey));
-      setImages((prev) => {
-        const updated = new Map(prev);
-        updated.delete(imageKey);
-        return updated;
-      });
-    },
-    [cancel, imagesRef],
-  );
+    setImageIds((prev) => prev.filter((imageId) => imageId !== id));
+    setImagesById((prev) => {
+      const updated = new Map(prev);
+      updated.delete(id);
+      return updated;
+    });
+  };
 
   /**
    * Reorder images after drag-and-drop.
+   * Only `imageIds` is updated — the map and queue are unaffected.
    *
-   * Behavior:
-   *    - Move the item at `activeKey` to the position of `overKey`.
-   *    - Update `imageKeys`, the images map and queue are unaffected.
-   *    - Processing order on the next scan reflects the new display order.
-   *
-   * @param activeKey - The `imageKey` to the item being dragged.
-   * @param overKey - The `imageKey` of the item it was dropped onto.
+   * @param activeId - The id of the item being dragged.
+   * @param overId - The id of the item it was dropped onto.
    */
-  const reorderImages = useCallback(
-    (activeKey: string, overKey: string): void => {
-      if (activeKey === overKey) return;
-      setImageKeys((prev) => {
-        const oldIndex = prev.indexOf(activeKey);
-        const newIndex = prev.indexOf(overKey);
-        if (oldIndex === -1 || newIndex === -1) return prev;
-        return arrayMove(prev, oldIndex, newIndex);
-      });
-    },
-    [],
-  );
+  const reorderImages = (activeId: string, overId: string): void => {
+    if (activeId === overId) return;
+    setImageIds((prev) => {
+      const activeIndex = prev.indexOf(activeId);
+      const overIndex = prev.indexOf(overId);
+      if (activeIndex === -1 || overIndex === -1) return prev;
+      return arrayMove(prev, activeIndex, overIndex);
+    });
+  };
 
   /**
-   * Enqueue images and export PDF file for download.
+   * Re-process an image with manually adjusted crop corners.
+   * Skips ML inference and warps directly to the provided corners.
+   * Enqueues immediately — processed image updates in the background.
+   *
+   * @param id - The id of the image to crop.
+   * @param corners - The new crop corners in image space coordinates.
+   */
+  const cropImage = (id: string, corners: QuadCorners): void => {
+    const documentImage = imagesByIdRef.current.get(id);
+    if (!documentImage) return;
+
+    const updatedDocumentImage: DocumentImage = {
+      ...documentImage,
+      corners,
+      status: "notProcessed",
+      processed: undefined,
+      error: undefined,
+    };
+
+    setImagesById((prev) => {
+      const updatedImages = new Map(prev);
+      updatedImages.set(id, updatedDocumentImage);
+      return updatedImages;
+    });
+
+    enqueue(updatedDocumentImage);
+  };
+
+  const rotateRightImage = (id: string): void => {
+    const documentImage = imagesByIdRef.current.get(id);
+    if (!documentImage) return;
+
+    const updatedDocumentImage: DocumentImage = {
+      ...documentImage,
+      rotationStep: documentImage.rotationStep + 1,
+    };
+
+    setImagesById((prev) => {
+      const updatedImages = new Map(prev);
+      updatedImages.set(id, updatedDocumentImage);
+      return updatedImages;
+    });
+  };
+
+  /**
+   * Export all processed images as a PDF file for download.
    *
    * Behavior:
-   *    - Enqueue all stale or unprocessed images in display order.
-   *    - Wait for all promises to settle and export processed images to a PDF.
-   *    - Trigger a browser download of that PDF.
-   *    - Failed images are skipped in the export.
+   *    - Stale or unprocessed images are enqueued and awaited before export.
+   *    - Failed images are skipped.
+   *    - Rotation is applied to each image via canvas before encoding.
+   *    - Triggers a browser download of the resulting PDF.
    *
-   * @param fileName - The name of the downloaded PDF file. Defaults to "scan.pdf".
+   * @param fileName - The downloaded file name. Defaults to "scan.pdf".
    * @returns A promise that resolves when the PDF has been saved.
    */
   const exportPDF = async (fileName: string = "scan.pdf"): Promise<void> => {
-    const allEntries = imageKeysRef.current.map(
-      (key) => imagesRef.current.get(key)!,
+    const allDocumentImages = imageIdsRef.current.map(
+      (id) => imagesByIdRef.current.get(id)!,
     );
 
-    const results = await Promise.all(
-      allEntries.map(async (entry) => {
-        const stale =
-          entry.processPhase === "notProcessed" ||
-          entry.processPhase === "failed" ||
-          (entry.processPhase === "processed" && entry.scanMode !== scanMode);
+    const stalePairs = await Promise.all(
+      allDocumentImages.map(async (documentImage) => {
+        const isStale =
+          documentImage.status === "notProcessed" ||
+          documentImage.status === "failed" ||
+          (documentImage.status === "processed" &&
+            documentImage.scanMode !== scanMode);
 
-        if (stale) {
-          const processedImage = await enqueue({ ...entry, scanMode }).catch(
-            () => null,
-          );
-          return processedImage;
-        }
+        const asset = isStale
+          ? await enqueue({ ...documentImage, scanMode }).catch(() => null)
+          : (documentImage.processed ?? null);
 
-        return entry.processedImage ?? null;
+        return asset ? { documentImage, asset } : null;
       }),
     );
 
-    const validResults = results.filter(
-      (result): result is ImageFile => result !== null,
+    const validPairs = stalePairs.filter(
+      (pair): pair is { documentImage: DocumentImage; asset: ImageAsset } =>
+        pair !== null,
     );
 
-    if (validResults.length === 0) return;
+    if (validPairs.length === 0) return;
 
     const pdf = new jsPDF("p", "mm", "a4");
     const pageWidth = pdf.internal.pageSize.getWidth();
 
     try {
       const loadedImages = await Promise.all(
-        validResults.map((processedImage) => loadImage(processedImage.url)),
+        validPairs.map(({ asset }) => loadImage(asset.url)),
       );
 
       loadedImages.forEach((image, index) => {
+        const { documentImage } = validPairs[index];
+        const degrees = (((documentImage.rotationStep % 4) + 4) % 4) * 90;
+
+        let source: HTMLImageElement | HTMLCanvasElement = image;
+
+        if (degrees !== 0) {
+          const isAxesSwapped = degrees === 90 || degrees === 270;
+          const canvas = document.createElement("canvas");
+          canvas.width = isAxesSwapped
+            ? image.naturalHeight
+            : image.naturalWidth;
+          canvas.height = isAxesSwapped
+            ? image.naturalWidth
+            : image.naturalHeight;
+          const ctx = canvas.getContext("2d")!;
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          ctx.rotate((degrees * Math.PI) / 180);
+          ctx.drawImage(
+            image,
+            -image.naturalWidth / 2,
+            -image.naturalHeight / 2,
+          );
+          source = canvas;
+        }
+
         const imageWidth = pageWidth;
-        const imageHeight = (image.height / image.width) * pageWidth;
+        const imageHeight = (source.height / source.width) * pageWidth;
         if (index > 0) pdf.addPage();
-        pdf.addImage(image, "JPEG", 0, 0, imageWidth, imageHeight);
+        pdf.addImage(
+          source as HTMLCanvasElement,
+          "JPEG",
+          0,
+          0,
+          imageWidth,
+          imageHeight,
+        );
       });
 
       pdf.save(fileName);
-    } catch (e) {
-      setExportError(e instanceof Error ? e.message : "Failed to export PDF");
+    } catch (error) {
+      setExportError(
+        error instanceof Error ? error.message : "Failed to export PDF",
+      );
     }
   };
 
-  /**
-   * Clear the current PDF export error message.
-   */
+  /** Clear the current PDF export error message. */
   const clearExportError = (): void => setExportError(null);
 
-  const failedCount = Array.from(images.values()).filter(
-    (entry) => entry.processPhase === "failed",
+  const failedCount = Array.from(imagesById.values()).filter(
+    (entry) => entry.status === "failed",
   ).length;
 
   return {
-    imageKeys,
-    images,
-    scanMode,
-    isProcessing,
-    hasImages: imageKeys.length > 0,
-    failedCount,
     exportError,
-    clearExportError,
+    failedCount,
+    hasImages: imageIds.length > 0,
+    imageIds,
+    imagesById,
+    isProcessing,
+    scanMode,
     insertImages,
-    scanImages,
-    setScanMode,
-    retryImage,
     removeImage,
     reorderImages,
+    replaceImage,
+    retryImage,
+    cropImage,
+    rotateRightImage,
+    scanImages,
+    setScanMode,
+    clearExportError,
     exportPDF,
   };
 };

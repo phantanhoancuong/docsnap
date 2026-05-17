@@ -19,39 +19,36 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 import { CloseIcon, HourglassIcon } from "@/app/assets/icons";
-import { ImageEntry } from "@/app/types";
+import { DocumentImage } from "@/app/types";
 import { Icon } from "@/app/components/server";
 
 /**
- * An image card.
+ * A draggable image card in the gallery.
  *
- * Behavior:
- *    - The card is draggable unless `isProcessing` is true.
- *    - Buttons inside stop propagation so licks are not mistaken for drag starts.
+ * Memoized so it only re-renders when its own data changes, not when sibling cards update during processing.
  *
- * Notes: Memoized so it only re-renders when its own entry changes, not when sibling cards update their state during processing.
- *
- * @param imageKey - Stable ID used as the DnD ID.
- * @param entry - `ImageEntry` containing phase, image URLs, and error state.
- * @param index - Position in display ordered.
- * @param onRetry - Called with `imageKey` when the user retries a failed card.
- * @param onRemove - Called with `imageKey` when the user deletes the card.
+ * @param documentImage - `DocumentImage` containing status, URLs, rotation, and error state.
+ * @param index - 0-based display position, shown as a 1-based page number badge.
+ * @param isProcessing - When `true`, drag is disabled.
+ * @param onRetry - Called with `documentImage.id` when the user retries a failed card.
+ * @param onRemove - Called with `documentImage.id` when the user deletes the card.
+ * @param onSelect - Called with `documentImage.id` when the user taps the card.
  */
 const ImageCard = React.memo(
   function SortableImageCard({
-    imageKey,
-    entry,
+    documentImage,
     index,
     isProcessing,
     onRetry,
     onRemove,
+    onSelect,
   }: {
-    imageKey: string;
-    entry: ImageEntry;
+    documentImage: DocumentImage;
     index: number;
     isProcessing: boolean;
-    onRetry: (imageKey: string) => void;
-    onRemove: (imageKey: string) => void;
+    onRetry: (imageId: string) => void;
+    onRemove: (imageId: string) => void;
+    onSelect: (imageId: string) => void;
   }) {
     const {
       attributes,
@@ -60,9 +57,9 @@ const ImageCard = React.memo(
       transform,
       transition,
       isDragging,
-    } = useSortable({ id: imageKey });
+    } = useSortable({ id: documentImage.id });
 
-    const style = {
+    const cardStyle = {
       transform: CSS.Transform.toString(transform),
       transition,
       opacity: isDragging ? 0.4 : 1,
@@ -70,25 +67,41 @@ const ImageCard = React.memo(
       touchAction: "none",
     };
 
-    const { processPhase } = entry;
+    const imageStyle = {
+      transform: `rotate(${documentImage.rotationStep * 90}deg)`,
+    };
+
+    const { status } = documentImage;
 
     return (
       <div
         ref={setNodeRef}
-        style={style}
-        className={`relative ${
+        style={cardStyle}
+        className={`relative aspect-square ${
           isProcessing ? "cursor-default" : "cursor-grab active:cursor-grabbing"
         }`}
         {...attributes}
         {...listeners}
       >
-        {processPhase === "notProcessed" && (
-          <img src={entry.originalImage.url} className="w-full" />
+        {status === "notProcessed" && (
+          <img
+            src={documentImage.original.url}
+            className="absolute inset-0 w-full h-full object-contain"
+            style={imageStyle}
+            onClick={() => {
+              if (isDragging) return;
+              onSelect(documentImage.id);
+            }}
+          />
         )}
 
-        {processPhase === "processing" && (
+        {status === "processing" && (
           <>
-            <img className="opacity-25 w-full" src={entry.originalImage.url} />
+            <img
+              className="absolute inset-0 w-full h-full object-contain opacity-25"
+              src={documentImage.original.url}
+              style={imageStyle}
+            />
             <Icon
               src={HourglassIcon}
               className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-8 animate-spin"
@@ -96,22 +109,34 @@ const ImageCard = React.memo(
           </>
         )}
 
-        {processPhase === "processed" && (
-          <img src={entry.processedImage!.url} className="w-full" />
+        {status === "processed" && (
+          <img
+            src={documentImage.processed!.url}
+            className="absolute inset-0 w-full h-full object-contain"
+            style={imageStyle}
+            onClick={() => {
+              if (isDragging) return;
+              onSelect(documentImage.id);
+            }}
+          />
         )}
 
-        {processPhase === "failed" && (
+        {status === "failed" && (
           <>
-            <img className="opacity-25 w-full" src={entry.originalImage.url} />
+            <img
+              className="absolute inset-0 w-full h-full object-contain opacity-25"
+              src={documentImage.original.url}
+              style={imageStyle}
+            />
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-2">
               <p className="text-xs text-red-500 text-center line-clamp-3">
-                {entry.errorMessage ?? "Processing failed"}
+                {documentImage.error ?? "Processing failed"}
               </p>
               <button
                 className="text-xs border border-red-500 text-red-500 rounded-sm px-2 py-1 cursor-pointer"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onRetry(imageKey);
+                  onRetry(documentImage.id);
                 }}
               >
                 Retry
@@ -130,7 +155,7 @@ const ImageCard = React.memo(
           className="absolute top-1 right-1 size-5 flex items-center justify-center bg-black/50 text-white rounded-full cursor-pointer"
           onClick={(e) => {
             e.stopPropagation();
-            onRemove(imageKey);
+            onRemove(documentImage.id);
           }}
         >
           <Icon src={CloseIcon} className="size-3" />
@@ -138,47 +163,50 @@ const ImageCard = React.memo(
       </div>
     );
   },
+
   // Only re-render when this card's data changes.
   (prev, next) =>
-    prev.imageKey === next.imageKey &&
+    prev.documentImage.id === next.documentImage.id &&
     prev.index === next.index &&
     prev.isProcessing === next.isProcessing &&
-    prev.entry.processPhase === next.entry.processPhase &&
-    prev.entry.errorMessage === next.entry.errorMessage &&
-    prev.entry.originalImage.url === next.entry.originalImage.url &&
-    prev.entry.processedImage?.url === next.entry.processedImage?.url &&
+    prev.documentImage.status === next.documentImage.status &&
+    prev.documentImage.error === next.documentImage.error &&
+    prev.documentImage.rotationStep === next.documentImage.rotationStep &&
+    prev.documentImage.original.url === next.documentImage.original.url &&
+    prev.documentImage.processed?.url === next.documentImage.processed?.url &&
     prev.onRetry === next.onRetry &&
     prev.onRemove === next.onRemove,
 );
 
 /**
- * Responsive drag-to-reoder grid of image cards.
+ * Responsive drag-to-reorder grid of `ImageCard`.
  *
- * Behavior:
- *    - Each card shows the current process phase, a page number badge, and a delete button.
- *    - The card is draggable for reordering when not processing.
+ * Drag-to-reorder is blocked while `isProcessing` is true.
  *
- * @param imageKeys - Ordered list of image keys reflecting PDF page order.
- * @param images - Map of `imageKey` to ImageEntry.
- * @param isProcessing - When true, drag-to-reorder is blocked.
- * @param onRetry - Called with the `imageKey` when the user retries a failed image.
- * @param onRemove - Called with the `imageKey` when the user deletes an image.
- * @param onReorder - Called with `activeKey` and `overKey` when the user drops a card.
+ * @param imageIds - Ordered list of image IDs reflecting PDF page order.
+ * @param imagesById - Map of `imageId` to `DocumentImage`. Should be always in sync with `imageIds`.
+ * @param isProcessing - When `true`, drag-to-reorder is blocked.
+ * @param onRetry - Called with `documentImage.id` when the user retries a failed image.
+ * @param onRemove - Called with `documentImage.id` when the user deletes an image.
+ * @param onReorder - Called with `activeId` and `overId` when the user drops a card.
+ * @param onSelect - Called with `documentImage.id` when the user taps a card.
  */
 export default function ImageGallery({
-  imageKeys,
-  images,
+  imageIds,
+  imagesById,
   isProcessing,
   onRetry,
   onRemove,
   onReorder,
+  onSelect,
 }: {
-  imageKeys: string[];
-  images: Map<string, ImageEntry>;
+  imageIds: string[];
+  imagesById: Map<string, DocumentImage>;
   isProcessing: boolean;
-  onRetry: (imageKey: string) => void;
-  onRemove: (imageKey: string) => void;
-  onReorder: (activeKey: string, overKey: string) => void;
+  onRetry: (imageId: string) => void;
+  onRemove: (imageId: string) => void;
+  onReorder: (activeId: string, overId: string) => void;
+  onSelect: (imageId: string) => void;
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -203,17 +231,17 @@ export default function ImageGallery({
       collisionDetection={closestCenter}
       onDragEnd={handleDragEnd}
     >
-      <SortableContext items={imageKeys} strategy={rectSortingStrategy}>
+      <SortableContext items={imageIds} strategy={rectSortingStrategy}>
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-4 overflow-hidden">
-          {imageKeys.map((key, index) => (
+          {imageIds.map((id, index) => (
             <ImageCard
-              key={key}
-              imageKey={key}
-              entry={images.get(key)!}
+              key={id}
+              documentImage={imagesById.get(id)!}
               index={index}
               isProcessing={isProcessing}
               onRetry={onRetry}
               onRemove={onRemove}
+              onSelect={onSelect}
             />
           ))}
         </div>

@@ -1,6 +1,6 @@
 import * as ort from "onnxruntime-web";
 
-import { ImageFile, Point, ScanMode } from "@/app/types";
+import { ScanMode, QuadCorners } from "@/app/types";
 
 import { getSession } from "@/app/lib/onnx";
 import { loadOpenCV } from "@/app/lib/opencv";
@@ -9,6 +9,7 @@ import {
   MEAN,
   PIXEL_NUMBER,
   STD,
+  defaultQuad,
   enhanceContrast,
   maskToQuad,
   warpPerspective,
@@ -80,43 +81,79 @@ const runInference = async (
 };
 
 /**
- * Document processing pipeline:
+ * Document processing pipeline.
+ *
+ * If `corners` are provided, skip ML inference and warp directly to those corners.
+ * Otherwise run the full pipeline:
  * 1. Load OpenCV and ONNX session.
  * 2. Run segmentation model to obtain mask.
- * 3. Extract document quad from mask.
+ * 3. Extract document corners from mask, falling back to full image bounds.
  * 4. Apply perspective warp.
  * 5. Enhance output (color or black/white).
  *
- * @param imageFile - Input image file and URL.
- * @param mode - Output mode ("color" or "bw").
- * @returns Processed image file and detected corner points.
+ * @param image - Source image element.
+ * @param mode - Output scan mode ("color" or "bw").
+ * @param mimeType - Output MIME type (e.g. "image/jpeg").
+ * @param fileName - Output file name.
+ * @param corners - Optional pre-determined corners. If provided, ML inference is skipped.
+ * @returns Processed file and the corners used.
  */
 export const processImage = async (
-  imageFile: ImageFile,
   image: HTMLImageElement,
-  mode: ScanMode = "color",
-): Promise<{
-  processedImage: ImageFile;
-  corners: [Point, Point, Point, Point];
-}> => {
-  const cv = await loadOpenCV();
+  mode: ScanMode,
+  mimeType: string,
+  fileName: string,
+  corners?: QuadCorners,
+): Promise<{ processedFile: File; quadCorners: QuadCorners }> => {
+  let quadCorners: QuadCorners;
 
-  const sess = await getSession();
-
-  const mask = await runInference(sess, image);
-
-  const quad = await maskToQuad(cv, mask, image.width, image.height);
-
-  if (quad === null) {
-    throw new Error(
-      "No document detected -- make sure the document is fully visible and well-lit",
-    );
+  if (corners) {
+    quadCorners = corners;
+  } else {
+    const cv = await loadOpenCV();
+    const sess = await getSession();
+    const mask = await runInference(sess, image);
+    quadCorners =
+      (await maskToQuad(cv, mask, image.width, image.height)) ??
+      defaultQuad(image.width, image.height);
   }
-  const warpedCanvas = warpPerspective(image, quad);
 
+  const processedFile = await warpAndEncode(
+    image,
+    quadCorners,
+    mode,
+    mimeType,
+    fileName,
+  );
+  return { processedFile, quadCorners };
+};
+
+/**
+ * Warp, enhance, and encode an image region into a `File`.
+ *
+ * @param image - Source image element.
+ * @param quadCorners - Document corners in image space coordinates.
+ * @param mode - Scan mode for contrast enhancement.
+ * @param mimeType - Output MIME type (e.g. "image/jpeg").
+ * @param fileName - Output file name.
+ * @returns Processed `File`.
+ */
+const warpAndEncode = async (
+  image: HTMLImageElement,
+  quadCorners: QuadCorners,
+  mode: ScanMode,
+  mimeType: string,
+  fileName: string,
+): Promise<File> => {
+  const warpedCanvas = warpPerspective(image, [
+    quadCorners.topLeft,
+    quadCorners.topRight,
+    quadCorners.bottomRight,
+    quadCorners.bottomLeft,
+  ]);
   const enhancedCanvas = enhanceContrast(warpedCanvas, mode);
-  const mimeType = imageFile.file.type || "image/jpeg";
   const quality = mimeType === "image/jpeg" ? 0.92 : undefined;
+
   const blob = await new Promise<Blob>((resolve, reject) =>
     enhancedCanvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
@@ -125,15 +162,5 @@ export const processImage = async (
     ),
   );
 
-  const processedFileName = imageFile.file.name.replace(
-    /(\.[^.]+)?$/,
-    "_scanned$1",
-  );
-  const processedFile = new File([blob], processedFileName, { type: mimeType });
-  const processedUrl = URL.createObjectURL(blob);
-
-  return {
-    processedImage: { file: processedFile, url: processedUrl },
-    corners: quad,
-  };
+  return new File([blob], fileName, { type: mimeType });
 };
