@@ -1,6 +1,12 @@
 # Changelog
 
-## [1.1.1]
+## [1.1.2] - 2026/05/17
+
+### Improved
+
+- B&W scans are now sharper and cleaner across a wider range of document types and phone cameras, particularly on lower resolution photos.
+
+## [1.1.1] - 2026/05/17
 
 - Corner dragging in `CropOverlay` now works correctly on mobile. React's `onTouchMovre` is passive by default so `preventDefault()` had no effect, causing the browser to intercept touch events with scroll and URL bar toggling. This was fixed by attaching a non passive `touchmove` listener through. This is applied to both `CropOverlay` and `InspectionOverlay`.
 

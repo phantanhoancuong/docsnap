@@ -1,26 +1,71 @@
 import { ScanMode } from "@/app/types";
 
 import {
-  ADAPTIVE_TILE_DIVISOR,
+  LOW_RES_THRESHOLD,
+  ADAPTIVE_TILE_DIVISOR_LOW_RES,
+  ADAPTIVE_TILE_DIVISOR_HIGH_RES,
   ADAPTIVE_TILE_MIN_PIXELS,
-  ADAPTIVE_THRESHOLD_C,
+  ADAPTIVE_TILE_MAX_PIXELS,
+  ADAPTIVE_THRESHOLD_C_MIN,
+  ADAPTIVE_THRESHOLD_C_MAX,
   HISTOGRAM_LOW_PERCENTILE,
   HISTOGRAM_HIGH_PERCENTILE,
-  PRETHRESHOLD_BLUR_RADIUS,
-  SHARPEN_AMOUNT_BW,
+  MAX_UPSCALE_FACTOR,
   SHARPEN_AMOUNT_COLOR,
   SHARPEN_BLUR_RADIUS,
-  UPSCALE_FACTOR,
+  PDF_TARGET_WIDTH,
+  PDF_TARGET_HEIGHT,
 } from "@/app/lib/pipeline/constants";
 
 /**
- * Build an integral image (summed-area table) from a grayscale image.
- * Allow O(1) area sum queries for adaptive thresholding.
+ * Compute the adaptive threshold neighborhood size and constant C for an image resolution.
+ *
+ * Neighborhood size scales with the shorter image dimension.
+ * A larger divisor is used for low-res images so the neighborhood stays proportionally small relative to the image.
+ * This is to prevent it to span too much of the image and over-smooth thin text strokes.
+ *
+ * C scales linearly with neighborhood size so images with low resolution gets a gentler threshold that preserves thin strokes,
+ * while ones with higher resolutions get stronger foreground and background separation.
+ *
+ * @param imageWidth - Width of the image in pixels.
+ * @param imageHeight - Height of the image in pixels.
+ * @returns `{ neighborSize, thresholdC }` tuned to the image resolution.
+ */
+const computeThresholdParams = (
+  imageWidth: number,
+  imageHeight: number,
+): { neighborhoodSize: number; thresholdC: number } => {
+  const shortSide = Math.min(imageWidth, imageHeight);
+  const divisor =
+    shortSide < LOW_RES_THRESHOLD
+      ? ADAPTIVE_TILE_DIVISOR_LOW_RES
+      : ADAPTIVE_TILE_DIVISOR_HIGH_RES;
+
+  const neighborhoodSize = Math.min(
+    ADAPTIVE_TILE_MAX_PIXELS,
+    Math.max(ADAPTIVE_TILE_MIN_PIXELS, (shortSide / divisor + 0.5) | 0),
+  );
+
+  const t =
+    (neighborhoodSize - ADAPTIVE_TILE_MIN_PIXELS) /
+    (ADAPTIVE_TILE_MAX_PIXELS - ADAPTIVE_TILE_MIN_PIXELS);
+  const thresholdC =
+    (ADAPTIVE_THRESHOLD_C_MIN +
+      t * (ADAPTIVE_THRESHOLD_C_MAX - ADAPTIVE_THRESHOLD_C_MIN) +
+      0.5) |
+    0;
+
+  return { neighborhoodSize, thresholdC };
+};
+
+/**
+ * Build an integral image (summed-area table) from a grayscale pixel array.
+ * Enable O(1) rectangular area sum queries used by adaptive thresholding.
  *
  * @param grayscalePixels - Flattened grayscale pixel array.
  * @param imageWidth - Width of the image.
  * @param imageHeight - Height of the image.
- * @returns Float64Array representing the integral image of size `(width + 1) * (height + 1)`.
+ * @returns Float64Array integral image of size `(width + 1) * (height + 1)`.
  */
 const buildIntegralTable = (
   grayscalePixels: Uint8Array,
@@ -50,21 +95,23 @@ const buildIntegralTable = (
 };
 
 /**
- * Perform adaptive thresholding using an integral image.
- * Produce a binary RGBA image.
+ * Perform adaptive thresholding using a precomputed integral image.
+ *
+ * Each pixel is compared against the mean of its local neighborhood minus `thresholdConstant`.
+ * This produces a binary RGBA image (pixels darker than the local mean are black, others are white).
  *
  * @param grayscalePixels - Flattened grayscale pixel array.
  * @param imageWidth - Width of the image.
  * @param imageHeight - Height of the image.
- * @param neighbourhoodSize - Size of the local window used for thresholding.
- * @param thresholdConstant - Constant subtracted from local mean.
- * @returns Uint8ClampedArray RGBA output.
+ * @param neighborhoodSize - Size of the local window used for thresholding.
+ * @param thresholdConstant - Constant subtracted from local mean before comparing.
+ * @returns Uint8ClampedArray RGBA binary output.
  */
 const adaptiveThreshold = (
   grayscalePixels: Uint8Array,
   imageWidth: number,
   imageHeight: number,
-  neighbourhoodSize: number,
+  neighborhoodSize: number,
   thresholdConstant: number,
 ): Uint8ClampedArray => {
   const integralTable = buildIntegralTable(
@@ -73,25 +120,17 @@ const adaptiveThreshold = (
     imageHeight,
   );
   const outputPixels = new Uint8ClampedArray(imageWidth * imageHeight * 4);
-  const halfNeighbourhood = (neighbourhoodSize / 2) | 0;
+  const halfneighborhood = (neighborhoodSize / 2) | 0;
   const integralTableWidth = imageWidth + 1;
 
   for (let rowIndex = 0; rowIndex < imageHeight; rowIndex++) {
-    const tileTop =
-      rowIndex - halfNeighbourhood < 0 ? 0 : rowIndex - halfNeighbourhood;
-    const tileBottom =
-      rowIndex + halfNeighbourhood >= imageHeight
-        ? imageHeight - 1
-        : rowIndex + halfNeighbourhood;
+    const tileTop = Math.max(0, rowIndex - halfneighborhood);
+    const tileBottom = Math.min(imageHeight - 1, rowIndex + halfneighborhood);
     const pixelRowOffset = rowIndex * imageWidth;
 
     for (let colIndex = 0; colIndex < imageWidth; colIndex++) {
-      const tileLeft =
-        colIndex - halfNeighbourhood < 0 ? 0 : colIndex - halfNeighbourhood;
-      const tileRight =
-        colIndex + halfNeighbourhood >= imageWidth
-          ? imageWidth - 1
-          : colIndex + halfNeighbourhood;
+      const tileLeft = Math.max(0, colIndex - halfneighborhood);
+      const tileRight = Math.min(imageWidth - 1, colIndex + halfneighborhood);
       const tileArea = (tileRight - tileLeft) * (tileBottom - tileTop);
 
       const tileSum =
@@ -117,13 +156,38 @@ const adaptiveThreshold = (
 };
 
 /**
- * Apply unsharp masking to enhance edges by subtracting a blurred version.
+ * Convert an RGBA pixel buffer to grayscale using luminance weights.
+ * Operates directly on the raw pixel data without allocating a new canvas.
+ *
+ * @param rgbaData - RGBA pixel buffer from `getImageData()`.
+ * @param pixelCount - Total number of pixels.
+ * @returns Uint8Array of grayscale values.
+ */
+const rgbaToGrayscale = (
+  rgbaData: Uint8ClampedArray,
+  pixelCount: number,
+): Uint8Array => {
+  const grayscale = new Uint8Array(pixelCount);
+  for (let i = 0; i < pixelCount; ++i) {
+    const offset = i * 4;
+    grayscale[i] =
+      (0.299 * rgbaData[offset] +
+        0.587 * rgbaData[offset + 1] +
+        0.114 * rgbaData[offset + 2] +
+        0.5) |
+      0;
+  }
+  return grayscale;
+};
+
+/**
+ * Apply unsharp masking to sharpen edges by subtracting a blurred version of the image.
  *
  * @param canvasContext - Canvas 2D context containing the image.
  * @param imageWidth - Width of the image.
  * @param imageHeight - Height of the image.
- * @param sharpenAmount - Strength of sharpening effect.
- * @param blurRadius - Radius used for Gaussian blur.
+ * @param sharpenAmount - Strength of the sharpening effect.
+ * @param blurRadius - Gaussian blur radius used to compute the unsharp mask.
  */
 const applyUnsharpMask = (
   canvasContext: CanvasRenderingContext2D,
@@ -175,10 +239,12 @@ const applyUnsharpMask = (
 };
 
 /**
- * Flood-fill black regions connected to borders and them white.
- * This is used to remove background artifacts after thresholding.
+ * Flood-fill black pixels connected to the image border and paint them white.
  *
- * @param pixelData - RGBA pixel buffer (modified in-place).
+ * Remove background artifacts that touch the edge after adaptive thresholding.
+ * Use iterative BFS with pre-allocated buffers to avoid call stack limits.
+ *
+ * @param pixelData - RGBA pixel buffer.
  * @param imageWidth - Width of the image.
  * @param imageHeight - Height of the image.
  */
@@ -211,7 +277,7 @@ const floodFillEdgesWhite = (
     enqueueIfBlack(colIndex, 0);
     enqueueIfBlack(colIndex, imageHeight - 1);
   }
-  for (let rowIndex = 0; rowIndex < imageHeight; rowIndex++) {
+  for (let rowIndex = 1; rowIndex < imageHeight - 1; ++rowIndex) {
     enqueueIfBlack(0, rowIndex);
     enqueueIfBlack(imageWidth - 1, rowIndex);
   }
@@ -233,27 +299,20 @@ const floodFillEdgesWhite = (
 };
 
 /**
- * Enchance color images through:
- * - Per-channel histogram stretching.
- * - Unsharp masking.
+ * Enhance color images through per-channel histogram stretching and unsharp masking.
  *
-
- */
-/**
- * Enhance color images through per-channel histogram stretching.
- *
- * Clip the darkest `HISTOGRAM_LOW_PERCENTILE` and brightest `HISTOGRAM_HIGH_PERCENTILE` of pixels per channel,
- * then stretch the remaining range to [0, 255].
+ * For each channel, clip the darkest `HISTOGRAM_LOW_PERCENTILE` and brightest `HISTOGRAM_HIGH_PERCENTILE` of pixels,
+ * then stretch the remaining range to [0, 255] to maximize contrast. Unsharp masking is then applied to sharpen edges.
  *
  * @param canvasContext - Canvas 2D context containing the image.
  * @param imageWidth - Width of the image.
  * @param imageHeight - Height of the image.
  */
-function enhanceColor(
+const enhanceColor = (
   canvasContext: CanvasRenderingContext2D,
   imageWidth: number,
   imageHeight: number,
-): void {
+): void => {
   const totalPixels = imageWidth * imageHeight;
   const fullImageData = canvasContext.getImageData(
     0,
@@ -308,14 +367,13 @@ function enhanceColor(
     SHARPEN_AMOUNT_COLOR,
     SHARPEN_BLUR_RADIUS,
   );
-}
+};
 
 /**
  * Enhance black-and-white images through:
- *    - Pre-blur to reduce noise before thresholding.
  *    - Grayscale conversion using luminance weights.
- *    - Adaptive thresholding (local binarization).
- *    - Edge flood-fill to remove border-connected background artifacts.
+ *    - Resolution-aware adaptive thresholding by scaling neighborhood size and constant C with image dimensions.
+ *    - Edge flood-fill to remove background artifacts connected to the border.
  *
  * @param canvasContext - Canvas 2D context containing the image.
  * @param imageWidth - Width of the image.
@@ -327,45 +385,25 @@ const enhanceBW = (
   imageHeight: number,
 ): void => {
   const pixelNumber = imageWidth * imageHeight;
-
-  const preBlurCanvas = document.createElement("canvas");
-  preBlurCanvas.width = imageWidth;
-  preBlurCanvas.height = imageHeight;
-
-  const preBlurContext = preBlurCanvas.getContext("2d", {
-    willReadFrequently: true,
-  })!;
-  preBlurContext.filter = `blur(${PRETHRESHOLD_BLUR_RADIUS}px)`;
-  preBlurContext.drawImage(canvasContext.canvas, 0, 0);
-  preBlurContext.filter = "none";
-
-  const blurredPixelData = preBlurContext.getImageData(
+  const rawPixelData = canvasContext.getImageData(
     0,
     0,
     imageWidth,
     imageHeight,
   ).data;
-  const grayscalePixels = new Uint8Array(pixelNumber);
-  for (let pixelIndex = 0; pixelIndex < pixelNumber; ++pixelIndex) {
-    const byteOffset = pixelIndex * 4;
-    grayscalePixels[pixelIndex] =
-      (0.299 * blurredPixelData[byteOffset] +
-        0.587 * blurredPixelData[byteOffset + 1] +
-        0.114 * blurredPixelData[byteOffset + 2] +
-        0.5) |
-      0;
-  }
+  const grayscalePixels = rgbaToGrayscale(rawPixelData, pixelNumber);
 
-  const neighborhoodSize = Math.max(
-    ADAPTIVE_TILE_MIN_PIXELS,
-    (Math.min(imageWidth, imageHeight) / ADAPTIVE_TILE_DIVISOR + 0.5) | 0,
+  const { neighborhoodSize, thresholdC } = computeThresholdParams(
+    imageWidth,
+    imageHeight,
   );
+
   const thresholdedPixels = adaptiveThreshold(
     grayscalePixels,
     imageWidth,
     imageHeight,
     neighborhoodSize,
-    ADAPTIVE_THRESHOLD_C,
+    thresholdC,
   );
 
   const binaryImageData = canvasContext.createImageData(
@@ -374,14 +412,6 @@ const enhanceBW = (
   );
   binaryImageData.data.set(thresholdedPixels);
   canvasContext.putImageData(binaryImageData, 0, 0);
-
-  applyUnsharpMask(
-    canvasContext,
-    imageWidth,
-    imageHeight,
-    SHARPEN_AMOUNT_BW,
-    SHARPEN_BLUR_RADIUS,
-  );
 
   const edgeFillImageData = canvasContext.getImageData(
     0,
@@ -394,39 +424,44 @@ const enhanceBW = (
 };
 
 /**
- * Image enhancement pipeline.
+ * Image enhancement pipeline:
  *
- * Upscale the input by `UPSCALE_FACTOR`, apply either BW or color enhancement, then downsample back to the original size.
+ * Scale the input to fit within the PDF target resolution (A4 at 300 DPI) before enhancement so the adaptive threshold always has enough pixels to work with.
+ * Images already larger than the target are processed at native resolution.
+ * Scale factor is capped at `MAX_UPSCALE_FACTOR` to avoid excessive memory on very small inputs.
  *
  * @param canvas - Source canvas element.
- * @param mode - Scan mode ("bw" or "color" mode).
- * @returns HTMLCanvasElement containing enhanced image.
+ * @param mode - Scan mode ("bw" or "color").
+ * @returns HTMLCanvasElement containing the enhanced image at the scaled resolution.
  */
 export const enhanceContrast = (canvas: HTMLCanvasElement, mode: ScanMode) => {
-  const upscaledWidth = (canvas.width * UPSCALE_FACTOR + 0.5) | 0;
-  const upscaledHeight = (canvas.height * UPSCALE_FACTOR + 0.5) | 0;
+  const scaleFactor = Math.min(
+    MAX_UPSCALE_FACTOR,
+    Math.max(
+      1.0,
+      Math.min(
+        PDF_TARGET_WIDTH / canvas.width,
+        PDF_TARGET_HEIGHT / canvas.height,
+      ),
+    ),
+  );
 
-  const upscaledCanvas = document.createElement("canvas");
-  upscaledCanvas.width = upscaledWidth;
-  upscaledCanvas.height = upscaledHeight;
+  const scaledWidth = (canvas.width * scaleFactor + 0.5) | 0;
+  const scaledHeight = (canvas.height * scaleFactor + 0.5) | 0;
 
-  const upscaledContext = upscaledCanvas.getContext("2d", {
+  const scaledCanvas = document.createElement("canvas");
+  scaledCanvas.width = scaledWidth;
+  scaledCanvas.height = scaledHeight;
+
+  const scaledContext = scaledCanvas.getContext("2d", {
     willReadFrequently: true,
   })!;
-  upscaledContext.imageSmoothingEnabled = true;
-  upscaledContext.imageSmoothingQuality = "high";
-  upscaledContext.drawImage(canvas, 0, 0, upscaledWidth, upscaledHeight);
+  scaledContext.imageSmoothingEnabled = true;
+  scaledContext.imageSmoothingQuality = "high";
+  scaledContext.drawImage(canvas, 0, 0, scaledWidth, scaledHeight);
 
-  if (mode === "bw") enhanceBW(upscaledContext, upscaledWidth, upscaledHeight);
-  else enhanceColor(upscaledContext, upscaledWidth, upscaledHeight);
+  if (mode === "bw") enhanceBW(scaledContext, scaledWidth, scaledHeight);
+  else enhanceColor(scaledContext, scaledWidth, scaledHeight);
 
-  const outputCanvas = document.createElement("canvas");
-  outputCanvas.width = canvas.width;
-  outputCanvas.height = canvas.height;
-  const outputContext = outputCanvas.getContext("2d")!;
-  outputContext.imageSmoothingEnabled = true;
-  outputContext.imageSmoothingQuality = "high";
-  outputContext.drawImage(upscaledCanvas, 0, 0, canvas.width, canvas.height);
-
-  return outputCanvas;
+  return scaledCanvas;
 };
