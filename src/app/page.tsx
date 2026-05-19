@@ -13,13 +13,19 @@ import {
 import {
   CameraView,
   CropOverlay,
-  ExportErrorOverlay,
-  FailedImagesOverlay,
+  ExportErrorModal,
+  ExportModal,
+  FailedImagesModal,
   ImageGallery,
   InspectionOverlay,
 } from "@/app/components/client";
 import { Icon } from "@/app/components/server";
-import { OverlayState, QuadCorners, ScanMode } from "@/app/types";
+import {
+  ExportOptions,
+  OverlayState,
+  QuadCorners,
+  ScanMode,
+} from "@/app/types";
 
 const SCAN_MODES: ScanMode[] = ["bw", "color"];
 const SCAN_MODE_LABELS: Record<ScanMode, string> = {
@@ -87,15 +93,24 @@ export default function Home() {
   };
 
   /**
-   * Initiate PDF export, or show the failed images overlay if any images failed.
-   * Prevents exporting a PDF with missing pages.
+   * Open the export modal, or show the failed images modal if any images failed.
+   * Prevent exporting a PDF with missing pages.
    */
-  const handleDownload = (): void => {
+  const handleExportOverlay = (): void => {
     if (scanner.failedCount > 0) {
       setOverlay({ type: "failedImages" });
       return;
     }
-    scanner.exportPDF();
+    setOverlay({ type: "export" });
+  };
+
+  /**
+   * Trigger PDF export with the options configured in the export modal.
+   *
+   * @param options - Export options from `ExportModal`.
+   */
+  const handleExport = (options: ExportOptions): void => {
+    scanner.exportPDF(options.fileName);
   };
 
   /** Open the crop overlay for the currently inspected image. */
@@ -238,7 +253,7 @@ export default function Home() {
 
                 {/* Download button (turns red when there are failed images) */}
                 <button
-                  onClick={handleDownload}
+                  onClick={handleExportOverlay}
                   disabled={scanner.isProcessing}
                   className={[
                     "flex w-full items-center justify-center gap-2 p-6 border-2 rounded-sm transition-all",
@@ -270,7 +285,7 @@ export default function Home() {
 
       {/* Failed images modal */}
       {overlay.type === "failedImages" && (
-        <FailedImagesOverlay
+        <FailedImagesModal
           failedCount={scanner.failedCount}
           onClose={() => setOverlay({ type: "none" })}
         />
@@ -278,7 +293,7 @@ export default function Home() {
 
       {/* Export error modal */}
       {scanner.exportError && (
-        <ExportErrorOverlay
+        <ExportErrorModal
           errorMessage={scanner.exportError}
           onClose={scanner.clearExportError}
         />
@@ -329,6 +344,14 @@ export default function Home() {
             />
           );
         })()}
+
+      {/* Export modal */}
+      {overlay.type === "export" && (
+        <ExportModal
+          onExport={handleExport}
+          onClose={() => setOverlay({ type: "none" })}
+        />
+      )}
 
       <footer className="text-xs text-gray-400 text-center pb-4">
         app version: {process.env.NEXT_PUBLIC_VERSION}

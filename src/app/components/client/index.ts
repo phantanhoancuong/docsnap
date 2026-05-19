@@ -5,4 +5,4 @@ export { default as InspectionOverlay } from "./InspectionOverlay";
 export { default as LoadingOverlay } from "./LoadingOverlay";
 export { default as ModelLoader } from "./ModelLoader";
 export { default as ServiceWorkerRegistration } from "./ServiceWorkerRegistration";
-export * from "./Overlays";
+export * from "./Modals";

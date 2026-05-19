@@ -5,4 +5,10 @@ export type OverlayState =
   | { type: "inspection"; imageId: string; imageIndex: number }
   | { type: "crop"; imageId: string }
   | { type: "failedImages" }
-  | { type: "exportError" };
+  | { type: "exportError" }
+  | { type: "export" };
+
+export type ExportOptions = {
+  fileName: string;
+  orientation: "portrait" | "landscape";
+};

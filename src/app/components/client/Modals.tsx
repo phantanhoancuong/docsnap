@@ -1,8 +1,12 @@
 "use client";
 
+import { useState } from "react";
+
 import { Icon } from "@/app/components/server";
 
 import { CloseIcon } from "@/app/assets/icons";
+
+import { ExportOptions } from "@/app/types";
 
 /**
  * Base modal overlay. Clicking the backdrop or the close button dismisses it.
@@ -10,7 +14,7 @@ import { CloseIcon } from "@/app/assets/icons";
  * @param onClose - Called when the overlay should be dismissed.
  * @param children - Content rendered inside the panel.
  */
-export function Overlay({
+export function Modal({
   onClose,
   children,
 }: {
@@ -45,7 +49,7 @@ export function Overlay({
  * @param failedCount - Number of images currently in the failed phase.
  * @param onClose - Called when the overlay should be dismissed.
  */
-export function FailedImagesOverlay({
+export function FailedImagesModal({
   failedCount,
   onClose,
 }: {
@@ -53,7 +57,7 @@ export function FailedImagesOverlay({
   onClose: () => void;
 }) {
   return (
-    <Overlay onClose={onClose}>
+    <Modal onClose={onClose}>
       <p className="text-sm font-medium text-red-500">
         {failedCount} {failedCount === 1 ? "image" : "images"} failed
       </p>
@@ -68,7 +72,7 @@ export function FailedImagesOverlay({
       >
         Dismiss
       </button>
-    </Overlay>
+    </Modal>
   );
 }
 
@@ -78,7 +82,7 @@ export function FailedImagesOverlay({
  * @param errorMessage - The error message to display.
  * @param onClose - Called when the overlay should be dismissed.
  */
-export function ExportErrorOverlay({
+export function ExportErrorModal({
   errorMessage,
   onClose,
 }: {
@@ -86,7 +90,7 @@ export function ExportErrorOverlay({
   onClose: () => void;
 }) {
   return (
-    <Overlay onClose={onClose}>
+    <Modal onClose={onClose}>
       <p className="text-sm font-medium text-red-500">Export failed</p>
       <p className="text-sm opacity-60">{errorMessage}</p>
       <button
@@ -95,6 +99,58 @@ export function ExportErrorOverlay({
       >
         Dismiss
       </button>
-    </Overlay>
+    </Modal>
+  );
+}
+
+const defaultFileName = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  return `scan-${year}-${month}-${day}-${hours}-${minutes}`;
+};
+
+/**
+ * Shown before export to let the user customize output settings.
+ *
+ * @param onClose - Called when the overlay should be dismissed.
+ * @param onExport - Called with the configured export options when the user confirms.
+ */
+export function ExportModal({
+  onClose,
+  onExport,
+}: {
+  onClose: () => void;
+  onExport: (options: ExportOptions) => void;
+}) {
+  const [options, setOptions] = useState<ExportOptions>({
+    fileName: defaultFileName(),
+    orientation: "portrait",
+  });
+
+  return (
+    <Modal onClose={onClose}>
+      <p className="text-sm font-medium">Export</p>
+
+      <label className="flex flex-col gap-1">
+        File name
+        <input
+          type="text"
+          value={options.fileName}
+          onChange={(e) => setOptions({ ...options, fileName: e.target.value })}
+          className="w-full p-2 border rounded-sm text-sm bg-transparent"
+        />
+      </label>
+
+      <button
+        className="w-full p-3 border-2 rounded-sm text-sm cursor-pointer"
+        onClick={() => onExport(options)}
+      >
+        Download
+      </button>
+    </Modal>
   );
 }
