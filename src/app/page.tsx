@@ -110,7 +110,7 @@ export default function Home() {
    * @param options - Export options from `ExportModal`.
    */
   const handleExport = (options: ExportOptions): void => {
-    scanner.exportPDF(options.fileName);
+    scanner.exportPDF(options);
   };
 
   /** Open the crop overlay for the currently inspected image. */

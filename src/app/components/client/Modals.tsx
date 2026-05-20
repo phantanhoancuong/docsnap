@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Icon } from "@/app/components/server";
 
@@ -131,6 +131,10 @@ export function ExportModal({
     orientation: "portrait",
   });
 
+  useEffect(() => {
+    console.log(options);
+  }, [options]);
+
   return (
     <Modal onClose={onClose}>
       <p className="text-sm font-medium">Export</p>
@@ -143,6 +147,26 @@ export function ExportModal({
           onChange={(e) => setOptions({ ...options, fileName: e.target.value })}
           className="w-full p-2 border rounded-sm text-sm bg-transparent"
         />
+      </label>
+
+      <label className="flex flex-col gap-1">
+        Orientation
+        <div className="flex gap-2">
+          {(["portrait", "landscape"] as const).map((o) => {
+            return (
+              <button
+                className={`flex flex-1 cursor-pointer rounded-sm text-sm bg-transparent p-2 border justify-center ${
+                  options.orientation === o
+                    ? "border-foreground"
+                    : "border-foreground/20"
+                }`}
+                onClick={() => setOptions({ ...options, orientation: o })}
+              >
+                {o}
+              </button>
+            );
+          })}
+        </div>
       </label>
 
       <button

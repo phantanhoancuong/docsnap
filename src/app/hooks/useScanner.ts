@@ -16,6 +16,7 @@ import {
 import { processImage } from "@/app/lib/pipeline";
 
 import { useLatest, useProcessingQueue } from "@/app/hooks";
+import { ExportOptions } from "../types";
 
 /**
  * Core scanner hook.
@@ -392,16 +393,17 @@ export const useScanner = () => {
   /**
    * Export all processed images as a PDF file for download.
    *
-   * Behavior:
-   *    - Stale or unprocessed images are enqueued and awaited before export.
-   *    - Failed images are skipped.
-   *    - Rotation is applied to each image via canvas before encoding.
-   *    - Triggers a browser download of the resulting PDF.
+   * Stale or unprocessed images are enqueued and awaited before export.
+   * Failed images are skipped. Rotation is applied via canvas before encoding.
+   * Trigger a browser download of the resulting PDF.
    *
-   * @param fileName - The downloaded file name. Defaults to "scan.pdf".
-   * @returns A promise that resolves when the PDF has been saved.
+   * @param fileName - Downloaded file name. ".pdf" extension is appended automatically. Default to "scan".
+   * @param orientation - Page orientation. Default to "portrait".
    */
-  const exportPDF = async (fileName: string = "scan.pdf"): Promise<void> => {
+  const exportPDF = async ({
+    fileName = "scan",
+    orientation = "portrait",
+  }: Partial<ExportOptions> = {}): Promise<void> => {
     const allDocumentImages = imageIdsRef.current.map(
       (id) => imagesByIdRef.current.get(id)!,
     );
@@ -429,8 +431,11 @@ export const useScanner = () => {
 
     if (validPairs.length === 0) return;
 
-    const pdf = new jsPDF("p", "mm", "a4");
-    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pdf = new jsPDF(orientation === "landscape" ? "l" : "p", "mm", "a4");
+    const pageWidth =
+      orientation === "landscape"
+        ? pdf.internal.pageSize.getHeight()
+        : pdf.internal.pageSize.getWidth();
 
     try {
       const loadedImages = await Promise.all(
@@ -476,7 +481,8 @@ export const useScanner = () => {
         );
       });
 
-      pdf.save(fileName);
+      const normalizedFileName = fileName.replace(/\.pdf$/i, "") + ".pdf";
+      pdf.save(normalizedFileName);
     } catch (error) {
       setExportError(
         error instanceof Error ? error.message : "Failed to export PDF",
