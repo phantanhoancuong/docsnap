@@ -353,8 +353,15 @@ export default function Home() {
         />
       )}
 
-      <footer className="text-xs text-gray-400 text-center pb-4">
-        app version: {process.env.NEXT_PUBLIC_VERSION}
+      <footer className="text-xs text-gray-400 text-center pb-4 flex flex-col gap-1">
+        <span>All processing happens on your device. No data is uploaded.</span>
+        <div className="flex gap-2 justify-center">
+          <Link href="/privacy" className="underline underline-offset-2">
+            Privacy
+          </Link>
+          <span>·</span>
+          <span>app version: {process.env.NEXT_PUBLIC_VERSION}</span>
+        </div>
       </footer>
     </div>
   );

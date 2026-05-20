@@ -1,4 +1,5 @@
 export { default as AlbumIcon } from "./photo_library_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg";
+export { default as ArrowBackIcon } from "./arrow_back_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg";
 export { default as ArrowLeftIcon } from "./arrow_left_24dp_FFFFFF_FILL1_wght400_GRAD0_opsz24.svg";
 export { default as ArrowRightIcon } from "./arrow_right_24dp_FFFFFF_FILL1_wght400_GRAD0_opsz24.svg";
 export { default as CameraIcon } from "./photo_camera_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg";

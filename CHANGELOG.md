@@ -1,6 +1,12 @@
 # Changelog
 
-## [1.2.0] - 2020/05/20
+## [1.2.1] - 2026/05/21
+
+### Added
+
+- Privacy page covering on-device processing, data ethics, third-party services, and contact information. All image processing happens locally in your browser.
+
+## [1.2.0] - 2026/05/20
 
 ### Added
 
