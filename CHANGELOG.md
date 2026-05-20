@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0] - 2020/05/20
+
+### Added
+
+- Export modal lets you customize page size (A4, A3, Letter), orientation (portrait, landscape), and image quality before downloading.
+- Image quality slider controls JPEG compression (lower quality means smaller files, higher quality means larger files). Default to 92%.
+- Images are now processed at full quality internally and compressed at export, so adjusting quality doesn't require re-processing..
+
 ## [1.1.2] - 2026/05/17
 
 ### Improved
