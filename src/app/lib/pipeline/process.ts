@@ -152,7 +152,7 @@ const warpAndEncode = async (
     quadCorners.bottomLeft,
   ]);
   const enhancedCanvas = enhanceContrast(warpedCanvas, mode);
-  const quality = mimeType === "image/jpeg" ? 0.92 : undefined;
+  const quality = mimeType === "image/jpeg" ? 1.0 : undefined;
 
   const blob = await new Promise<Blob>((resolve, reject) =>
     enhancedCanvas.toBlob(
