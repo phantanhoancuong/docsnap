@@ -391,24 +391,89 @@ export const useScanner = () => {
   };
 
   /**
+   * Rotate an image element by `degrees` clockwise onto a new canvas.
+   * Swap canvas dimension for 90 and 270 degrees rotations.
+   *
+   * @param image - Source image element.
+   * @param degrees - Clockwise rotation in degrees (90, 180, 270).
+   * @returns Canvas with the rotated image drawn onto it.
+   */
+  const applyRotation = (
+    image: HTMLImageElement,
+    degrees: number,
+  ): HTMLCanvasElement => {
+    const isAxesSwapped = degrees === 90 || degrees === 270;
+    const canvas = document.createElement("canvas");
+    canvas.width = isAxesSwapped ? image.naturalHeight : image.naturalWidth;
+    canvas.height = isAxesSwapped ? image.naturalWidth : image.naturalHeight;
+    const context = canvas.getContext("2d")!;
+    context.translate(canvas.width / 2, canvas.height / 2);
+    context.rotate((degrees * Math.PI) / 180);
+    context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
+    return canvas;
+  };
+
+  /**
+   * Encode a canvas or image to a JPEG data URL at the given quality.
+   *
+   * @param source - Canvas or image element to encode.
+   * @param quality - JPEG quality 0-1.
+   * @returns Promise resolving to a data URL string.
+   */
+  const encodeToDataUrl = (
+    source: HTMLImageElement | HTMLCanvasElement,
+    quality: number,
+  ): Promise<string> => {
+    return new Promise<string>((resolve, reject) => {
+      const canvas =
+        source instanceof HTMLCanvasElement
+          ? source
+          : (() => {
+              const c = document.createElement("canvas");
+              c.width = source.naturalWidth;
+              c.height = source.naturalHeight;
+              c.getContext("2d")!.drawImage(source, 0, 0);
+              return c;
+            })();
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) return reject(new Error("toBlob failed"));
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error("FileReader failed"));
+          reader.readAsDataURL(blob);
+        },
+        "image/jpeg",
+        quality,
+      );
+    });
+  };
+
+  /**
    * Export all processed images as a PDF file for download.
    *
    * Stale or unprocessed images are enqueued and awaited before export.
-   * Failed images are skipped. Rotation is applied via canvas before encoding.
+   * Failed iamges are skipped. Rotation is applied via canvas before encoding.
+   * Each image is JPEG-encoded at the chosen quality before adding to the PDF.
    * Trigger a browser download of the resulting PDF.
    *
-   * @param fileName - Downloaded file name. ".pdf" extension is appended automatically. Default to "scan".
+   * @param fileName - Downloaded file name. ".pdf" is appended automatically. Default to "scan".
    * @param orientation - Page orientation. Default to "portrait".
+   * @param pageSize - Page size. Default to "a4".
+   * @param quality - JPEG quality 0-100. Default to 92.
    */
   const exportPDF = async ({
     fileName = "scan",
     orientation = "portrait",
+    pageSize = "a4",
+    quality = 92,
   }: Partial<ExportOptions> = {}): Promise<void> => {
     const allDocumentImages = imageIdsRef.current.map(
       (id) => imagesByIdRef.current.get(id)!,
     );
 
-    const stalePairs = await Promise.all(
+    const pairs = await Promise.all(
       allDocumentImages.map(async (documentImage) => {
         const isStale =
           documentImage.status === "notProcessed" ||
@@ -424,64 +489,37 @@ export const useScanner = () => {
       }),
     );
 
-    const validPairs = stalePairs.filter(
+    const validPairs = pairs.filter(
       (pair): pair is { documentImage: DocumentImage; asset: ImageAsset } =>
         pair !== null,
     );
 
     if (validPairs.length === 0) return;
 
-    const pdf = new jsPDF(orientation === "landscape" ? "l" : "p", "mm", "a4");
-    const pageWidth =
-      orientation === "landscape"
-        ? pdf.internal.pageSize.getHeight()
-        : pdf.internal.pageSize.getWidth();
-
+    const pdf = new jsPDF({ orientation, unit: "mm", format: pageSize });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const jpegQuality = quality / 100;
+    const normalizedFileName =
+      (fileName.trim() || "scan").replace(/\.pdf$/i, "") + ".pdf";
     try {
       const loadedImages = await Promise.all(
         validPairs.map(({ asset }) => loadImage(asset.url)),
       );
 
-      loadedImages.forEach((image, index) => {
+      for (let index = 0; index < validPairs.length; ++index) {
+        const image = loadedImages[index];
         const { documentImage } = validPairs[index];
+
         const degrees = (((documentImage.rotationStep % 4) + 4) % 4) * 90;
+        const source = degrees !== 0 ? applyRotation(image, degrees) : image;
 
-        let source: HTMLImageElement | HTMLCanvasElement = image;
+        const dataUrl = await encodeToDataUrl(source, jpegQuality);
 
-        if (degrees !== 0) {
-          const isAxesSwapped = degrees === 90 || degrees === 270;
-          const canvas = document.createElement("canvas");
-          canvas.width = isAxesSwapped
-            ? image.naturalHeight
-            : image.naturalWidth;
-          canvas.height = isAxesSwapped
-            ? image.naturalWidth
-            : image.naturalHeight;
-          const ctx = canvas.getContext("2d")!;
-          ctx.translate(canvas.width / 2, canvas.height / 2);
-          ctx.rotate((degrees * Math.PI) / 180);
-          ctx.drawImage(
-            image,
-            -image.naturalWidth / 2,
-            -image.naturalHeight / 2,
-          );
-          source = canvas;
-        }
-
-        const imageWidth = pageWidth;
         const imageHeight = (source.height / source.width) * pageWidth;
         if (index > 0) pdf.addPage();
-        pdf.addImage(
-          source as HTMLCanvasElement,
-          "JPEG",
-          0,
-          0,
-          imageWidth,
-          imageHeight,
-        );
-      });
+        pdf.addImage(dataUrl, "JPEG", 0, 0, pageWidth, imageHeight);
+      }
 
-      const normalizedFileName = fileName.replace(/\.pdf$/i, "") + ".pdf";
       pdf.save(normalizedFileName);
     } catch (error) {
       setExportError(

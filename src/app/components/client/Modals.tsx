@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Icon } from "@/app/components/server";
 
 import { CloseIcon } from "@/app/assets/icons";
 
-import { ExportOptions } from "@/app/types";
+import { ExportOptions, PageOrientation, PageSize } from "@/app/types";
 
 /**
  * Base modal overlay. Clicking the backdrop or the close button dismisses it.
@@ -113,6 +113,17 @@ const defaultFileName = () => {
   return `scan-${year}-${month}-${day}-${hours}-${minutes}`;
 };
 
+const PAGE_SIZE_LABELS: Record<PageSize, string> = {
+  a4: "A4",
+  a3: "A3",
+  letter: "Letter",
+};
+
+const ORIENTATION_LABELS: Record<PageOrientation, string> = {
+  portrait: "Portrait",
+  landscape: "Landscape",
+};
+
 /**
  * Shown before export to let the user customize output settings.
  *
@@ -129,18 +140,17 @@ export function ExportModal({
   const [options, setOptions] = useState<ExportOptions>({
     fileName: defaultFileName(),
     orientation: "portrait",
+    pageSize: "a4",
+    quality: 92,
   });
-
-  useEffect(() => {
-    console.log(options);
-  }, [options]);
 
   return (
     <Modal onClose={onClose}>
       <p className="text-sm font-medium">Export</p>
 
+      {/* File name */}
       <label className="flex flex-col gap-1">
-        File name
+        <span className="text-xs opacity-60">File name</span>
         <input
           type="text"
           value={options.fileName}
@@ -149,25 +159,61 @@ export function ExportModal({
         />
       </label>
 
-      <label className="flex flex-col gap-1">
-        Orientation
+      <div className="flex flex-col gap-1">
+        <span className="text-xs opacity-60">Orientation</span>
         <div className="flex gap-2">
-          {(["portrait", "landscape"] as const).map((o) => {
-            return (
-              <button
-                className={`flex flex-1 cursor-pointer rounded-sm text-sm bg-transparent p-2 border justify-center ${
-                  options.orientation === o
-                    ? "border-foreground"
-                    : "border-foreground/20"
-                }`}
-                onClick={() => setOptions({ ...options, orientation: o })}
-              >
-                {o}
-              </button>
-            );
-          })}
+          {(["portrait", "landscape"] as const).map((o) => (
+            <button
+              key={o}
+              className={`flex flex-1 cursor-pointer rounded-sm text-sm bg-transparent p-2 border justify-center ${
+                options.orientation === o
+                  ? "border-foreground"
+                  : "border-foreground/20"
+              }`}
+              onClick={() => setOptions({ ...options, orientation: o })}
+            >
+              {ORIENTATION_LABELS[o]}
+            </button>
+          ))}
         </div>
-      </label>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <span className="text-xs opacity-60">Page size</span>
+        <div className="flex gap-2">
+          {(["a4", "a3", "letter"] as const).map((s) => (
+            <button
+              key={s}
+              className={`flex flex-1 cursor-pointer rounded-sm text-sm bg-transparent p-2 border justify-center ${
+                options.pageSize === s
+                  ? "border-foreground"
+                  : "border-foreground/20"
+              }`}
+              onClick={() => setOptions({ ...options, pageSize: s })}
+            >
+              {PAGE_SIZE_LABELS[s]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <span className="text-xs opacity-60">Quality — {options.quality}%</span>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={options.quality}
+          onChange={(e) =>
+            setOptions({ ...options, quality: Number(e.target.value) })
+          }
+          className="w-full accent-highlight"
+        />
+        <div className="flex justify-between">
+          <span className="text-xs opacity-40">Smaller file</span>
+          <span className="text-xs opacity-40">Better quality</span>
+        </div>
+      </div>
 
       <button
         className="w-full p-3 border-2 rounded-sm text-sm cursor-pointer"

@@ -8,7 +8,12 @@ export type OverlayState =
   | { type: "exportError" }
   | { type: "export" };
 
+export type PageSize = "a4" | "a3" | "letter";
+export type PageOrientation = "portrait" | "landscape";
+
 export type ExportOptions = {
   fileName: string;
-  orientation: "portrait" | "landscape";
+  pageSize: PageSize;
+  orientation: PageOrientation;
+  quality: number;
 };
