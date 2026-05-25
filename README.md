@@ -5,6 +5,8 @@
 Try it now at:
 https://docsnap-hoancuong.vercel.app
 
+You can even install it on mobile and desktop, it works offline after first load.
+
 ---
 
 ## ML model
@@ -30,22 +32,16 @@ After the model produces a segmentation mask, a series of image processing steps
 1. Mask-to-quad conversion: The mask boundary is simplified to a four-corner polygon representing the document corners.
 2. Perspective warp: The quad is used to compute a homography, and the image is warped to a flat rectangular view.
 3. Enhancement: Contrast, brightness, and sharpness adjustments are applied to improve readability.
+4. Export: Images are encoded at the chosen quality and assembled into a PDF with jsPDF.
 
 ---
 
 ## Future Improvement Considerations:
 
-### ML and Processing:
-
 - Improve model robustness on low-light or cluttered backgrounds.
 - Explore lighter architectures for faster inference on low-end devices.
-- Improve the efficiency of warping and enhancing the images. It seems the processing time for these steps is a lot longer than inferencing with the ML model.
-
-### UX:
-
-- Manual corner adjustment for cases where auto-detection is imprecise or wonky.
+- Additional enhancement filters.
 - Accessibility improvements.
-- Progressive Web App support for offline use and home screen install.
 
 These are exploratory and may or may not be implemented in the future.
 
