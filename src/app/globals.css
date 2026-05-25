@@ -1,28 +1,45 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --highlight: #09299a;
+  --app-background: var(--color-neutral-50);
+  --app-foreground: var(--color-neutral-950);
+  --app-primary: var(--color-blue-800);
+  --app-primary-foreground: var(--color-neutral-50);
+  --app-primary-inactive: var(--color-blue-600);
+  --app-primary-muted: var(--color-neutral-600);
+  --app-primary-error: var(--color-red-500);
+  --app-overlay-background: var(--color-neutral-950);
+  --app-overlay-foreground: var(--color-neutral-50);
+  --app-modal-backdrop: rgb(0 0 0 / 75%);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-highlight: var(--highlight);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--app-background);
+  --color-foreground: var(--app-foreground);
+  --color-primary: var(--app-primary);
+  --color-primary-foreground: var(--app-primary-foreground);
+  --color-primary-inactive: var(--app-primary-inactive);
+  --color-primary-muted: var(--app-primary-muted);
+  --color-primary-error: var(--app-primary-error);
+  --color-overlay-background: var(--app-overlay-background);
+  --color-overlay-foreground: var(--app-overlay-foreground);
+  --color-modal-backdrop: var(--app-modal-backdrop);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --app-background: var(--color-neutral-950);
+    --app-foreground: var(--color-neutral-50);
+    --app-primary: var(--color-blue-600);
+    --app-primary-foreground: var(--color-neutral-50);
+    --app-primary-inactive: var(--color-blue-800);
+    --app-primary-muted: var(--color-neutral-400);
+    --app-primary-error: var(--color-red-500);
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--app-background);
+  color: var(--app-foreground);
   font-family: Arial, Helvetica, sans-serif;
 }

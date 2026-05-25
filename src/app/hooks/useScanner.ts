@@ -7,16 +7,17 @@ import { jsPDF } from "jspdf";
 import { v4 as uuidv4 } from "uuid";
 
 import {
+  EXPORT_QUALITY,
   DocumentImage,
+  ExportOptions,
   ImageAsset,
   QuadCorners,
   ScanMode,
-} from "@/app/types/image";
+} from "@/app/types";
 
 import { processImage } from "@/app/lib/pipeline";
 
 import { useLatest, useProcessingQueue } from "@/app/hooks";
-import { ExportOptions } from "../types";
 
 /**
  * Core scanner hook.
@@ -467,7 +468,7 @@ export const useScanner = () => {
     fileName = "scan",
     orientation = "portrait",
     pageSize = "a4",
-    quality = 92,
+    quality = "high",
   }: Partial<ExportOptions> = {}): Promise<void> => {
     const allDocumentImages = imageIdsRef.current.map(
       (id) => imagesByIdRef.current.get(id)!,
@@ -498,7 +499,7 @@ export const useScanner = () => {
 
     const pdf = new jsPDF({ orientation, unit: "mm", format: pageSize });
     const pageWidth = pdf.internal.pageSize.getWidth();
-    const jpegQuality = quality / 100;
+    const jpegQuality = EXPORT_QUALITY[quality].value / 100;
     const normalizedFileName =
       (fileName.trim() || "scan").replace(/\.pdf$/i, "") + ".pdf";
     try {

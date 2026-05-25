@@ -33,6 +33,9 @@ const SCAN_MODE_LABELS: Record<ScanMode, string> = {
   color: "Color",
 };
 
+const ACTION_BUTTON_STYLING =
+  "flex items-center justify-center gap-2 p-4 border-2 border-primary bg-primary text-primary-foreground rounded-sm cursor-pointer whitespace-nowrap";
+
 /**
  * Home page component.
  *
@@ -169,24 +172,19 @@ export default function Home() {
       {/* Header */}
       <header className="flex items-center justify-between h-20 px-6">
         <Link href="/" className="flex items-center gap-3 cursor-pointer">
-          <h1 className="text-3xl font-bold tracking-tight">docsnap</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-primary">
+            docsnap
+          </h1>
         </Link>
       </header>
 
       <main className="flex flex-col flex-1 gap-6 p-6 overflow-hidden">
-        <div className="flex flex-col gap-10">
+        <div className="flex flex-col gap-6">
           {/* Action buttons */}
-          <div
-            className="grid gap-2"
-            style={{
-              gridTemplateRows: scanner.hasImages
-                ? "auto auto auto auto"
-                : "auto",
-            }}
-          >
+          <div className="flex flex-col gap-2">
             {/* Upload from gallery */}
-            <label className="flex items-center justify-center gap-2 p-6 border-2 rounded-sm cursor-pointer whitespace-nowrap">
-              <Icon src={AlbumIcon} />
+            <label className={ACTION_BUTTON_STYLING}>
+              <Icon className="text-highlight" src={AlbumIcon} />
               <span>Upload Photos</span>
               <input
                 type="file"
@@ -205,7 +203,7 @@ export default function Home() {
 
             {/* Open camera overlay */}
             <button
-              className="flex items-center justify-center gap-2 p-6 border-2 rounded-sm cursor-pointer whitespace-nowrap"
+              className={ACTION_BUTTON_STYLING}
               onClick={() => setOverlay({ type: "camera", mode: "capture" })}
             >
               <Icon src={CameraIcon} />
@@ -224,10 +222,10 @@ export default function Home() {
                         onClick={() => scanner.setScanMode(mode)}
                         disabled={isActive}
                         className={[
-                          "flex items-center justify-center p-6 border-2 rounded-sm transition-all duration-300",
+                          "flex items-center justify-center gap-2 p-4 border-2 rounded-sm whitespace-nowrap transition-all duration-300",
                           isActive
-                            ? "flex-2 cursor-default"
-                            : "flex-1 cursor-pointer",
+                            ? "flex-2 text-primary-foreground border-primary bg-primary cursor-default"
+                            : "flex-1 text-primary-foreground border-primary-inactive bg-primary-inactive cursor-pointer",
                         ].join(" ")}
                       >
                         <span>{SCAN_MODE_LABELS[mode]}</span>
@@ -241,7 +239,7 @@ export default function Home() {
                   onClick={scanner.scanImages}
                   disabled={scanner.isProcessing}
                   className={[
-                    "flex w-full items-center justify-center gap-2 p-6 border-2 rounded-sm transition-all",
+                    "flex items-center justify-center gap-2 p-4 border-2 border-primary bg-primary text-primary-foreground rounded-sm cursor-pointer whitespace-nowrap",
                     scanner.isProcessing
                       ? "cursor-not-allowed opacity-30"
                       : "cursor-pointer",
@@ -256,12 +254,12 @@ export default function Home() {
                   onClick={handleExportOverlay}
                   disabled={scanner.isProcessing}
                   className={[
-                    "flex w-full items-center justify-center gap-2 p-6 border-2 rounded-sm transition-all",
+                    "flex items-center justify-center gap-2 p-4 border-2 bg-primary text-primary-foreground rounded-sm whitespace-nowrap transition-all",
                     scanner.isProcessing
-                      ? "cursor-not-allowed opacity-30"
+                      ? "border-primary opacity-30 cursor-not-allowed"
                       : scanner.failedCount > 0
-                        ? "cursor-pointer border-red-500 text-red-500"
-                        : "cursor-pointer",
+                        ? "border-primary-error cursor-pointer"
+                        : "border-primary cursor-pointer",
                   ].join(" ")}
                 >
                   <Icon src={DownloadIcon} />
@@ -354,13 +352,13 @@ export default function Home() {
       )}
 
       <footer className="text-xs text-gray-400 text-center pb-4 flex flex-col gap-1">
-        <span>All processing happens on your device. No data is uploaded.</span>
+        <span>No data is sent to me. All processing happens on device.</span>
         <div className="flex gap-2 justify-center">
           <Link href="/privacy" className="underline underline-offset-2">
             Privacy
           </Link>
           <span>·</span>
-          <span>app version: {process.env.NEXT_PUBLIC_VERSION}</span>
+          <span>App version: {process.env.NEXT_PUBLIC_VERSION}</span>
         </div>
       </footer>
     </div>

@@ -61,7 +61,7 @@ const CameraView = ({
   };
 
   return (
-    <div className="flex flex-col fixed inset-x-0 top-0 bottom-0 z-50 bg-background">
+    <div className="flex flex-col fixed inset-x-0 top-0 bottom-0 z-50 bg-overlay-background">
       <div className="flex items-center justify-between h-20 px-6">
         <button
           className="cursor-pointer"
@@ -69,11 +69,11 @@ const CameraView = ({
         >
           <Icon
             src={isTorchOn ? FlashOnIcon : FlashOffIcon}
-            className="size-10"
+            className="size-10 text-overlay-foreground"
           />
         </button>
         <button className="cursor-pointer" onClick={() => onClose()}>
-          <Icon src={CloseIcon} className="size-10" />
+          <Icon src={CloseIcon} className="size-10 text-overlay-foreground" />
         </button>
       </div>
       {/* Video feed with shutter flash overlay */}
@@ -85,13 +85,15 @@ const CameraView = ({
           playsInline
         />
 
-        {shuttering && <div className="absolute inset-0 bg-background z-20" />}
+        {shuttering && (
+          <div className="absolute inset-0 bg-overlay-background z-20" />
+        )}
       </div>
       {/* Photo capture button */}
       <div className="flex justify-center shrink-0 py-4">
         <button
           disabled={isCapturing}
-          className="w-20 h-20 rounded-full border-4 border-foreground bg-background active:bg-foreground/20 transition-colors disabled:opacity-50"
+          className="w-20 h-20 rounded-full border-4 border-foreground bg-overlay-foreground active:bg-overlay-foreground/20 transition-colors disabled:opacity-50"
           onClick={async () => {
             if (isCapturing) return;
             setIsCapturing(true);

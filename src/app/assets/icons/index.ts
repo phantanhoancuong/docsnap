@@ -3,10 +3,12 @@ export { default as ArrowBackIcon } from "./arrow_back_24dp_FFFFFF_FILL0_wght400
 export { default as ArrowLeftIcon } from "./arrow_left_24dp_FFFFFF_FILL1_wght400_GRAD0_opsz24.svg";
 export { default as ArrowRightIcon } from "./arrow_right_24dp_FFFFFF_FILL1_wght400_GRAD0_opsz24.svg";
 export { default as CameraIcon } from "./photo_camera_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg";
+export { default as CheckIcon } from "./check_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg";
 export { default as CloseIcon } from "./close_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg";
 export { default as CompareIcon } from "./compare_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg";
 export { default as CropIcon } from "./crop_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg";
 export { default as DownloadIcon } from "./download_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg";
+export { default as ErrorIcon } from "./error_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg";
 export { default as FlashOffIcon } from "./flash_off_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg";
 export { default as FlashOnIcon } from "./flash_on_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg";
 export { default as HourglassIcon } from "./hourglass_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg";

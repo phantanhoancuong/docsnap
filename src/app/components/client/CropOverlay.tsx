@@ -3,12 +3,13 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 
 import { defaultQuad, rotatePoint, sortQuad, unrotatePoint } from "@/app/lib";
-import { CloseIcon } from "@/app/assets/icons";
+import { CheckIcon, CloseIcon } from "@/app/assets/icons";
 import { Icon } from "@/app/components/server";
 import { Point, QuadCorners, QuadPoints } from "@/app/types";
 
-const QUAD_COLOR = "var(--highlight)";
-const QUAD_FILL_COLOR = "color-mix(in srgb, var(--highlight) 15%, transparent)";
+const QUAD_COLOR = "var(--app-primary)";
+const QUAD_FILL_COLOR =
+  "color-mix(in srgb, var(--app-primary) 15%, transparent)";
 const QUAD_STROKE_WIDTH = 2;
 const CORNER_RADIUS = 12;
 const CORNER_STROKE_COLOR = "white";
@@ -64,6 +65,7 @@ const CropOverlay = ({
   const [quadPoints, setQuadPoints] = useState<QuadPoints | null>(null);
 
   // Rendered image rect in viewport coordinates, computed without CSS rotation applied.
+  // Used for both coordinate conversion and the image border overlay.
   const [unrotatedRect, setUnrotatedRect] = useState<{
     left: number;
     top: number;
@@ -98,7 +100,7 @@ const CropOverlay = ({
     });
   }, [rotationStep]);
 
-  // Re-compute rect on container resize so circles stay aligned with the image.
+  // Re-compute rect on container resize so circles and border stay aligned with the image.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -250,8 +252,7 @@ const CropOverlay = ({
   }, []);
 
   /**
-   * Begin dragging a corner.
-   *
+   * Begin dragging a corner (mobile).
    * Called on the circle element that reads index from data-index.
    */
   const handleTouchStart = useCallback((e: React.TouchEvent<SVGElement>) => {
@@ -300,9 +301,9 @@ const CropOverlay = ({
     };
   }, [sortedQuadCorners, imagePointToScreenPoint]);
 
-  // Lock `scroll` and block `touchmove` to prevent the browser URL bar from toggling on mobile.
-  // Non-passive listener is attached here because React's `onTouchMove` is passive by default so `preventDefault()` has no effect.
-  // `touchend` is also handled here to release the drag cleanly.
+  // Lock scroll and block touchmove to prevent the browser URL bar from toggling on mobile.
+  // Non-passive listener is attached here because React's onTouchMove is passive by default so preventDefault() has no effect.
+  // touchend is also handled here to release the drag cleanly.
   useEffect(() => {
     document.body.style.overflow = "hidden";
     const element = overlayRef.current;
@@ -336,10 +337,25 @@ const CropOverlay = ({
     };
   }, [screenPointToImagePoint]);
 
+  // Compute container-relative border position from unrotatedRect.
+  const borderRect =
+    unrotatedRect && containerRef.current
+      ? {
+          left:
+            unrotatedRect.left -
+            containerRef.current.getBoundingClientRect().left,
+          top:
+            unrotatedRect.top -
+            containerRef.current.getBoundingClientRect().top,
+          width: unrotatedRect.width,
+          height: unrotatedRect.height,
+        }
+      : null;
+
   return (
     <div
       ref={overlayRef}
-      className="flex flex-col fixed inset-x-0 top-0 z-50 bg-background gap-4 overflow-hidden"
+      className="flex flex-col fixed inset-x-0 top-0 z-50 bg-overlay-background gap-4 overflow-hidden"
       style={{ height: "100dvh" }}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -347,7 +363,7 @@ const CropOverlay = ({
       {/* Header */}
       <div className="flex items-center justify-end h-20 px-6">
         <button className="cursor-pointer" onClick={onClose}>
-          <Icon src={CloseIcon} className="size-10" />
+          <Icon src={CloseIcon} className="size-10 text-overlay-foreground" />
         </button>
       </div>
 
@@ -369,6 +385,19 @@ const CropOverlay = ({
             style={{ transform: `rotate(${rotationStep * 90}deg)` }}
             onLoad={handleImageLoad}
           />
+
+          {/* Border sized to actual rendered image pixels — reuses unrotatedRect */}
+          {borderRect && (
+            <div
+              className="absolute pointer-events-none border border-overlay-foreground"
+              style={{
+                left: borderRect.left,
+                top: borderRect.top,
+                width: borderRect.width,
+                height: borderRect.height,
+              }}
+            />
+          )}
 
           {screenQuadCorners && polygonPoints && (
             <svg
@@ -410,18 +439,20 @@ const CropOverlay = ({
       </div>
 
       {/* Actions */}
-      <div className="flex items-center justify-center gap-6 shrink-0 px-6 py-4 bg-highlight/50">
+      <div className="flex items-center justify-center gap-20 shrink-0 px-6 py-2 bg-primary text-primary-foreground">
         <button
-          className="cursor-pointer text-sm px-6 py-2 border rounded-full"
+          className="flex flex-col gap-1 items-center cursor-pointer py-1"
           onClick={onClose}
         >
-          Cancel
+          <Icon src={CloseIcon} className="size-6" />
+          <p className="text-xs">Cancel</p>
         </button>
         <button
-          className="cursor-pointer text-sm px-6 py-2 bg-highlight text-white rounded-full"
+          className="flex flex-col gap-1 items-center cursor-pointer py-1"
           onClick={handleConfirm}
         >
-          Apply
+          <Icon src={CheckIcon} className="size-6" />
+          <p className="text-xs">Apply</p>
         </button>
       </div>
     </div>
