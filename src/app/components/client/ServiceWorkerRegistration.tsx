@@ -10,7 +10,7 @@ import { useLoading } from "@/app/hooks/useLoading";
  * Behavior:
  *    - If already active with no update pending, mark ready immediately.
  *    - On first install, mark ready once the SW fully activates.
- *    - On mid-session update, reload to apply the new version.
+ *    - On update, reload to apply the new version.
  *    - Check for updates whenever the user returns to the app via visibility change.
  *    - Mark ready if registration fails or SW is unsupported so the UI is never blocked.
  */
@@ -49,12 +49,21 @@ const ServiceWorkerRegistration = () => {
             handleVisibilityChange,
           );
 
+        let isReloading = false;
+        const reload = () => {
+          if (isReloading) return;
+          isReloading = true;
+          window.location.reload();
+        };
+
+        navigator.serviceWorker.addEventListener("controllerchange", reload);
+
         registration.addEventListener("updatefound", () => {
           const newWorker = registration.installing;
           newWorker?.addEventListener("statechange", () => {
             if (newWorker.state !== "activated") return;
             if (navigator.serviceWorker.controller) {
-              window.location.reload();
+              reload();
             } else {
               setSwReady();
             }

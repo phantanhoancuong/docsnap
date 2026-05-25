@@ -1,8 +1,10 @@
 # Changelog
 
-## [1.3.1] - 2026/05/26
+## [1.3.2] - 2026/05/26
 
 ### Fixed
+
+- App updates now apply immediately when detected, even if the update was found while the app was in the background.
 
 ## [1.3.1] - 2026/05/26
 
