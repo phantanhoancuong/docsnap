@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.3.1] - 2026/05/26
+
+### Fixed
+
+## [1.3.1] - 2026/05/26
+
+### Fixed
+
+- App now checks for updates when returning to the tab or app, making updates more reliable on mobile PWA installs.
+
+## [1.3.0] - 2026/05/26
+
+### Improved
+
+- Light and dark mode now look consistent and intentional across the entire app.
+- Camera, inspection, and crop overlays always use a dark background for better document visibility.
+- Document images in the inspection and crop overlays now have a border that wraps the actual image pixels.
+- Export modal quality setting is now a slider with four named levels — Low, Medium, High, and Max.
+
+## [1.3.0] - 2026/05/25
+
+### Improved
+
+- Light and dark mode now look more consistent and intentional.
+- Camera, inspection, and crop overlays always use a dark background for better document visibility.
+- Document images in the inspection and crop overlays now have a border that wraps the actual image pixels.
+- Export modal quality setting is now a slider with four pre-defined levels instead of an integer value.
+
 ## [1.2.1] - 2026/05/21
 
 ### Added
