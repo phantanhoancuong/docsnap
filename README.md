@@ -5,7 +5,7 @@
 Try it now at:
 https://docsnap-hoancuong.vercel.app
 
-You can even install it on mobile and desktop, it works offline after first load.
+You can even install it as a PWA on mobile and desktop, it works offline after first load.
 
 ---
 
